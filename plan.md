@@ -130,21 +130,21 @@ NEXTAUTH_SECRET=<openssl rand -base64 32>
 
 ## 1.A — Scaffold + base layout + Dockerfile (Week 1)
 
-| #      | Task                                                                                                                                                        | Status | Notes                                                              |
-| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------ |
-| 1.A.1  | `npx create-next-app@latest web` with TypeScript, App Router, Tailwind, ESLint                                                                              | ⬜     | Name: `web/` inside repo root                                      |
-| 1.A.2  | Install: `pg`, `drizzle-orm` (or `prisma`), `next-auth@beta`, `@auth/drizzle-adapter`, `maplibre-gl`, `react-map-gl/maplibre`, `zod`, `date-fns`, `ioredis` | ⬜     | ORM pick: Drizzle (lighter, better types). Confirm before install. |
-| 1.A.3  | Env setup: `.env.local` (dev) + `.env.example` (committed) with `DATABASE_URL`, `REDIS_URL`, `NEXTAUTH_URL`, `NEXTAUTH_SECRET`                              | ⬜     |                                                                    |
-| 1.A.4  | Configure `next.config.js` with `output: 'standalone'` for lean Docker image                                                                                | ⬜     |                                                                    |
-| 1.A.5  | Write `web/Dockerfile` (multi-stage: deps → build → runner)                                                                                                 | ⬜     | Node 20-alpine base                                                |
-| 1.A.6  | Base layout: header (logo + nav Map/Alerts/About), footer (attribution)                                                                                     | ⬜     | Tailwind. Mobile-first.                                            |
-| 1.A.7  | Placeholder pages: `/`, `/map`, `/alerts`, `/about`                                                                                                         | ⬜     | Server components                                                  |
-| 1.A.8  | Global styles + typography (Inter font, neutral palette, single accent)                                                                                     | ⬜     |                                                                    |
-| 1.A.9  | 404 + error boundary                                                                                                                                        | ⬜     |                                                                    |
-| 1.A.10 | Local dev: `docker compose up postgres redis` + `cd web && npm run dev`                                                                                     | ⬜     | Verify DB reachable                                                |
+| #      | Task                                                                                                                                                                             | Status | Notes                                                                                       |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------- |
+| 1.A.1  | `pnpm create next-app@latest web` with TypeScript, App Router, Tailwind, ESLint, src-dir, turbopack                                                                              | ✅     | Next 16.2.11, React 19.2.4, TS 5.9, Tailwind 4. Package manager: pnpm 11.15.1 via corepack. |
+| 1.A.2  | Install: `pg`, `drizzle-orm`, `next-auth@beta`, `@auth/drizzle-adapter`, `maplibre-gl`, `react-map-gl`, `zod`, `date-fns`, `ioredis`, `bcryptjs`, `drizzle-kit`, `@types/pg`     | ✅     | ORM: Drizzle. `pnpm-workspace.yaml` grants `allowBuilds` for esbuild+sharp+unrs-resolver.   |
+| 1.A.3  | Env setup: `web/.env.example` committed with `DATABASE_URL`, `REDIS_URL`, `NEXTAUTH_URL`, `NEXTAUTH_SECRET`. Real values in `.env.local` (dev) and root `.env` (prod, VPS-only). | ✅     |                                                                                             |
+| 1.A.4  | Configure `next.config.ts` with `output: "standalone"` + `poweredByHeader: false` + AVIF/WebP                                                                                    | ✅     |                                                                                             |
+| 1.A.5  | Write `web/Dockerfile` (multi-stage deps → build → runner, node:20-alpine, non-root user, HEALTHCHECK) + `.dockerignore`                                                         | ✅     |                                                                                             |
+| 1.A.6  | Base layout: header (logo + nav Map/Alerts/About), footer (attribution + source list)                                                                                            | ✅     | Tailwind. Inter font. Mobile-first.                                                         |
+| 1.A.7  | Placeholder pages: `/`, `/map`, `/alerts`, `/about`                                                                                                                              | ✅     | Server components; each has real copy + phased status text                                  |
+| 1.A.8  | Global styles + typography (Inter font, slate palette, teal-700 accent)                                                                                                          | ✅     | `globals.css` uses `@theme inline` with `--color-accent`                                    |
+| 1.A.9  | 404 (`not-found.tsx`) + error boundary (`error.tsx`, client component)                                                                                                           | ✅     |                                                                                             |
+| 1.A.10 | Local verification: `pnpm typecheck` + `pnpm lint` + `pnpm build` all pass; docker build validates                                                                               | 🟨     | Build verified static prerender for 5 routes. Docker build running in background — see log. |
 
-**Verification:** `npm run dev` → all pages render, nav works, DB connection OK. Also `docker compose build web && docker compose up web` locally succeeds.
-**Commit:** `feat: scaffold Next.js app, Dockerfile, base layout, routing`
+**Verification result:** Next build succeeded, 5 static routes (`/`, `/_not-found`, `/about`, `/alerts`, `/map`). Typecheck + lint clean. Docker build in background.
+**Commit:** `feat(web): scaffold Next.js app, Dockerfile, base layout, routing`
 
 ## 1.B — Postgres/PostGIS schema + migrations (Week 1)
 
@@ -435,6 +435,17 @@ create table weather_snapshots (
 # WORKING LOG
 
 Append short dated entries as work progresses. Newest at top.
+
+## 2026-07-23
+
+- Phase 1.A ✅ (except docker build verification in progress). Next.js 16.2.11 + React 19 + Tailwind 4 + TS 5.9 scaffolded in `web/`.
+- Installed runtime deps: drizzle-orm, pg, next-auth@beta (v5), @auth/drizzle-adapter, maplibre-gl, react-map-gl, zod, date-fns, ioredis, bcryptjs. Dev: drizzle-kit, @types/pg.
+- pnpm 11.15.1 via corepack. `pnpm-workspace.yaml` grants build permission to esbuild+sharp+unrs-resolver.
+- Wrote `web/Dockerfile` (multi-stage, node:20-alpine, non-root user, HEALTHCHECK), `web/.dockerignore`, `web/.env.example`.
+- Base layout with Inter font + slate/teal palette. Header + footer + 4 pages (/, /map, /alerts, /about) + not-found + error boundary.
+- `next.config.ts` set to `output: "standalone"` for lean Docker image.
+- `pnpm build`: 5 static routes prerendered. Typecheck + lint clean.
+- **Next:** confirm docker build passes, commit Phase 1.A, move to 1.B (Drizzle schema + migrations).
 
 ## 2026-07-22 (update 3)
 

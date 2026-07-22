@@ -1,0 +1,71 @@
+import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
+import Link from 'next/link';
+import './globals.css';
+
+const inter = Inter({
+  variable: '--font-sans',
+  subsets: ['latin'],
+  display: 'swap',
+});
+
+export const metadata: Metadata = {
+  title: {
+    default: 'Climate Awareness GB',
+    template: '%s · Climate Awareness GB',
+  },
+  description:
+    'Verified reports, weather, and GLOF alerts for the climate crisis in Gilgit-Baltistan, Pakistan.',
+  openGraph: {
+    title: 'Climate Awareness GB',
+    description:
+      'Verified reports, weather, and GLOF alerts for the climate crisis in Gilgit-Baltistan, Pakistan.',
+    type: 'website',
+  },
+};
+
+const nav = [
+  { href: '/map', label: 'Map' },
+  { href: '/alerts', label: 'Alerts' },
+  { href: '/about', label: 'About' },
+];
+
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  return (
+    <html lang="en" className={`${inter.variable} h-full antialiased`}>
+      <body className="min-h-full flex flex-col bg-slate-50 text-slate-900">
+        <header className="border-b border-slate-200 bg-white">
+          <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+            <Link
+              href="/"
+              className="text-lg font-semibold tracking-tight text-slate-900 hover:text-teal-700"
+            >
+              Climate Awareness <span className="text-teal-700">GB</span>
+            </Link>
+            <nav className="flex gap-4 text-sm font-medium text-slate-600">
+              {nav.map((item) => (
+                <Link key={item.href} href={item.href} className="hover:text-teal-700">
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+          </div>
+        </header>
+
+        <main className="flex-1">{children}</main>
+
+        <footer className="border-t border-slate-200 bg-white">
+          <div className="mx-auto max-w-6xl px-4 py-6 text-xs text-slate-500">
+            <p>
+              Verified reports aggregated from Pamir Times, Ibex Media Network, PMD, PDMA GB, NDMA,
+              AKAH, ICIMOD, and UNDP GLOF-II. Neutral framing — impact tracker, not failure tracker.
+            </p>
+            <p className="mt-2">
+              Base map: OpenStreetMap contributors · Weather: Open-Meteo · Embeds: Meta oEmbed
+            </p>
+          </div>
+        </footer>
+      </body>
+    </html>
+  );
+}
