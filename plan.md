@@ -36,14 +36,14 @@
 | 0.2 | Verify data endpoints: PDMA GB feed URL, NDMA API, ICIMOD RDS, Open-Meteo | ✅ | Saved to `research/data-sources.md` |
 | 0.3 | Verify Meta oEmbed access requirements (app registration, token flow) | ✅ | **Tokenless since Jun 15 2026**. Covered in `research/data-sources.md`. No separate file needed. |
 | 0.4 | Save project memory (`~/.claude/projects/-Users-jawadhaider-Climate-Awareness/memory/`) | ✅ | 4 files + MEMORY.md index |
-| 0.5 | Init git repo (`git init` done by user) + first commit with `README.md`, `idea.md`, `plan.md`, `research/`, `docker-compose.yml`, `.env.example`, `.gitignore`, `db/init/` | 🟨 | Files staged; commit pending user go-ahead |
-| 0.6 | Create GitHub repo (private initially), push | ⬜ | Repo name: `climate-awareness-gb`. Need remote URL from user or `gh` CLI. |
+| 0.5 | Init git repo (`git init` done by user) + first commit with `README.md`, `idea.md`, `plan.md`, `research/`, `docker-compose.yml`, `.env.example`, `.gitignore`, `db/init/` | ✅ | First commit `79a2c82` on `main`: 9 files, +1078 lines |
+| 0.6 | Create GitHub repo (private initially), push | ⏭️ | Deferred by user. Local-only for now. Push before VPS deploy in Phase 1.G. |
 | 0.7 | Draft root `docker-compose.yml` skeleton: `postgres`, `redis`, `web` (Next.js), `worker` (cron) | ✅ | YAML validated with `docker compose config`. Uses `postgis/postgis:16-3.4`, Redis 7, internal `climate_net`, ports bound to `127.0.0.1`. See §Infra reference below. |
-| 0.8 | Provision on VPS: create project dir `/opt/climate-gb/`, clone repo, add `.env` (not committed) | ⬜ | Ensure Docker + Compose v2 installed |
-| 0.9 | Bring up `postgres` + `redis` on VPS, verify PostGIS enabled, verify healthchecks | ⬜ | `docker compose up -d postgres redis` |
-| 0.10 | Create Cloudflare DNS record → VPS IP; add proxy host in NPM (HTTP → app container:3000, force SSL via Let's Encrypt) | ⬜ | Subdomain choice deferred to 0.11 |
-| 0.11 | Pick + buy domain (`climate-gb.org` or similar, ~$15/yr) or use existing subdomain | ⬜ | Update Cloudflare + NPM |
-| 0.12 | Configure nightly `pg_dump` cron on VPS → encrypted upload (Backblaze B2 or Cloudflare R2 free tier) | ⬜ | Small shell script + systemd timer or crontab |
+| 0.8 | Provision on VPS: create project dir `/opt/climate-gb/`, rsync or clone repo, add `.env` (not committed) | 🟨 | Runbook: [`docs/deploy-runbook.md §0.8`](docs/deploy-runbook.md). User to execute. |
+| 0.9 | Bring up `postgres` + `redis` on VPS, verify PostGIS enabled, verify healthchecks | 🟨 | Runbook: [`docs/deploy-runbook.md §0.9`](docs/deploy-runbook.md). |
+| 0.10 | Create Cloudflare DNS record → VPS IP; add proxy host in NPM (HTTP → app container:3000, force SSL via Let's Encrypt) | 🟨 | Runbook: [`docs/deploy-runbook.md §0.10`](docs/deploy-runbook.md) — includes NPM network attach + Cloudflare rules. |
+| 0.11 | Pick + buy domain or use existing subdomain | 🟨 | Runbook: [`docs/deploy-runbook.md §0.11`](docs/deploy-runbook.md). Recommendation: start with subdomain of a domain you already own. |
+| 0.12 | Configure nightly `pg_dump` cron on VPS → encrypted upload (Backblaze B2 or Cloudflare R2 free tier) | 🟨 | Script written: [`bin/pg-backup.sh`](bin/pg-backup.sh). Runbook: [`docs/deploy-runbook.md §0.12`](docs/deploy-runbook.md) — includes restore drill. |
 
 **Deploy checkpoint:** Postgres + Redis containers running on VPS, reachable only via internal Docker network. Not exposed to public.
 **Commit message:** `chore: initialize project with plan, research, and docker-compose skeleton`
@@ -437,8 +437,11 @@ Append short dated entries as work progresses. Newest at top.
 
 ## 2026-07-22 (update 3)
 - Wrote `README.md`, `.gitignore`, `docker-compose.yml` (validated), `.env.example`, `db/init/00-extensions.sql`.
-- Git `init` already done by user (branch `main`, no commits, no remote). Files staged for first commit.
-- **Next:** confirm commit + get GitHub remote URL to push. Then Phase 0 tasks 0.8–0.12 (VPS provisioning, DNS/NPM, backups) which need VPS SSH access.
+- First commit `79a2c82` on `main`: 9 files, +1078 lines.
+- GitHub push deferred (user choice). Local-only until Phase 1.G.
+- Wrote `docs/deploy-runbook.md` covering Phase 0 tasks 0.8–0.12 (VPS provisioning, DNS/NPM, backup + restore drill). User executes on VPS. Tasks marked 🟨 (docs ready) until user runs and confirms.
+- Wrote executable `bin/pg-backup.sh` for nightly Postgres → Backblaze B2 backups via rclone.
+- **Next:** either (a) user runs runbook on VPS and marks 0.8–0.12 ✅, or (b) skip to Phase 1.A (Next.js scaffold) and provision VPS later before deploy.
 
 ## 2026-07-22 (update 2)
 - **Stack switch: self-hosted on Hostinger VPS.** Drops Vercel + managed Supabase entirely. Existing infra: Docker + Nginx Proxy Manager + Cloudflare. VPS specs: 8GB RAM, 100GB disk.
