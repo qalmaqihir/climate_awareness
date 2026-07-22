@@ -20,6 +20,7 @@ Prior (2024): **Ghizer** valley cut off for 5+ days due to Gilgit-Shandur road b
 ## Systemic failures reported by local media
 
 Per Ibex Media Network investigation:
+
 - Rs 10.3 billion allocated; only Rs 350 million spent on TADA (allowances).
 - Hiring irregularities widespread.
 - **200 Early Warning Systems planned** at Rs 160 million — none installed at scale.

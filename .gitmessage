@@ -1,0 +1,42 @@
+# <type>(<scope>): <subject>  (<= 72 chars, imperative mood)
+#
+# <body>  wrap at 72 chars. Explain the WHY, not the WHAT.
+#
+# <footer>
+#   BREAKING CHANGE: <description>
+#   Refs: #issue-id
+#   Co-Authored-By: Name <email>
+#
+# ---- Conventional Commits reference ----
+# Types:
+#   feat      new feature
+#   fix       bug fix
+#   docs      documentation only
+#   style     formatting, no code change
+#   refactor  code change that neither fixes bug nor adds feature
+#   perf      performance improvement
+#   test      adding / fixing tests
+#   build     build system, deps
+#   ci        CI configuration
+#   chore     misc, no src/test change
+#   revert    revert previous commit
+#
+# Scopes (this repo):
+#   web       Next.js app
+#   agents    Python / LangGraph agents
+#   db        Postgres / PostGIS schema, migrations
+#   infra     docker-compose, deploy, VPS
+#   ci        GitHub Actions, hooks
+#   docs      README, plan, research, runbooks
+#   deps      dependency bumps (with dependabot)
+#
+# Examples:
+#   feat(agents): add glof detection graph node
+#   fix(web): correct map bbox on mobile
+#   chore(ci): bump pre-commit-hooks to v5
+#   docs(infra): add restore drill to deploy runbook
+#
+# Rules:
+#   - Subject: no trailing period, imperative ("add" not "added")
+#   - One logical change per commit
+#   - Body optional but recommended for non-trivial commits

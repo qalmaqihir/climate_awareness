@@ -26,18 +26,18 @@ Full mission, objectives, principles → [`idea.md`](idea.md).
 
 **Self-hosted** on a Hostinger VPS behind Nginx Proxy Manager + Cloudflare.
 
-| Layer | Choice |
-|-------|--------|
-| Frontend | Next.js 15 (App Router, TypeScript, standalone build) |
-| Map | MapLibre GL + OpenStreetMap |
-| Database | Postgres 16 + PostGIS + `pgvector` (v2) |
-| ORM | Drizzle |
-| Auth | NextAuth.js (credentials + Drizzle adapter, bcrypt) |
-| Cache / rate limit | Redis 7 |
-| Scheduler | `worker/` container with `node-cron` |
-| Deploy | `docker compose up -d` on VPS; NPM reverse-proxies, Cloudflare in front |
-| Backups | Nightly `pg_dump` → Backblaze B2 / Cloudflare R2 |
-| External APIs | Meta oEmbed (tokenless), Open-Meteo, Anthropic (v2 agent) |
+| Layer              | Choice                                                                  |
+| ------------------ | ----------------------------------------------------------------------- |
+| Frontend           | Next.js 15 (App Router, TypeScript, standalone build)                   |
+| Map                | MapLibre GL + OpenStreetMap                                             |
+| Database           | Postgres 16 + PostGIS + `pgvector` (v2)                                 |
+| ORM                | Drizzle                                                                 |
+| Auth               | NextAuth.js (credentials + Drizzle adapter, bcrypt)                     |
+| Cache / rate limit | Redis 7                                                                 |
+| Scheduler          | `worker/` container with `node-cron`                                    |
+| Deploy             | `docker compose up -d` on VPS; NPM reverse-proxies, Cloudflare in front |
+| Backups            | Nightly `pg_dump` → Backblaze B2 / Cloudflare R2                        |
+| External APIs      | Meta oEmbed (tokenless), Open-Meteo, Anthropic (v2 agent)               |
 
 ## Repository layout
 

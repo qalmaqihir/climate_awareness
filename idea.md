@@ -12,6 +12,7 @@
 Gilgit-Baltistan (GB), Pakistan faces recurring Glacial Lake Outburst Floods (GLOFs), flash floods, landslides. Villages, farmland, livestock, homes destroyed each monsoon season.
 
 Compounding failures:
+
 - **No prevention infrastructure.** Only post-disaster aid.
 - **Broken connectivity.** No stable internet in most valleys. Cell networks fail 2 days to 2 weeks at a time.
 - **Poor road infrastructure.** Cuts off relief and evacuation.
@@ -26,14 +27,14 @@ Raise awareness of the GB climate crisis by aggregating verified reports, mappin
 
 ## 3. Objectives
 
-| # | Objective | Success signal |
-|---|-----------|----------------|
-| O1 | Aggregate verified GLOF/flood events on interactive GB map | 50+ events pinned in 3 months |
-| O2 | Surface official weather + GLOF alerts alongside events | PDMA/NDMA feed live daily |
-| O3 | Enable low-friction sharing to amplify signal | 1000+ shares in first 6 months |
-| O4 | Reach ICIMOD, UNDP GLOF-II, AKAH, international climate press | 3+ partnerships or citations by month 6 |
-| O5 | Serve on-ground GB residents with alerts (v2) | SMS/Telegram bot with 500+ subscribers |
-| O6 | Provide policy-ready reports (v3) | Monthly PDF distributed to NDMA + Senate committees |
+| #   | Objective                                                     | Success signal                                      |
+| --- | ------------------------------------------------------------- | --------------------------------------------------- |
+| O1  | Aggregate verified GLOF/flood events on interactive GB map    | 50+ events pinned in 3 months                       |
+| O2  | Surface official weather + GLOF alerts alongside events       | PDMA/NDMA feed live daily                           |
+| O3  | Enable low-friction sharing to amplify signal                 | 1000+ shares in first 6 months                      |
+| O4  | Reach ICIMOD, UNDP GLOF-II, AKAH, international climate press | 3+ partnerships or citations by month 6             |
+| O5  | Serve on-ground GB residents with alerts (v2)                 | SMS/Telegram bot with 500+ subscribers              |
+| O6  | Provide policy-ready reports (v3)                             | Monthly PDF distributed to NDMA + Senate committees |
 
 ## 4. Non-goals (explicit cuts)
 
@@ -45,11 +46,11 @@ Raise awareness of the GB climate crisis by aggregating verified reports, mappin
 
 ## 5. Audiences (phased)
 
-| Phase | Primary | Language | Delivery |
-|-------|---------|----------|----------|
-| v1 | International orgs, media, diaspora | English | Web |
-| v2 | GB residents on-ground | Urdu, Shina, Burushaski | SMS, Telegram, WhatsApp bot |
-| v3 | Pakistani policy stakeholders (NDMA, Senate, national media) | English + Urdu | Web + PDF briefs |
+| Phase | Primary                                                      | Language                | Delivery                    |
+| ----- | ------------------------------------------------------------ | ----------------------- | --------------------------- |
+| v1    | International orgs, media, diaspora                          | English                 | Web                         |
+| v2    | GB residents on-ground                                       | Urdu, Shina, Burushaski | SMS, Telegram, WhatsApp bot |
+| v3    | Pakistani policy stakeholders (NDMA, Senate, national media) | English + Urdu          | Web + PDF briefs            |
 
 ## 6. Guiding principles
 
@@ -93,17 +94,17 @@ Budget target: **~$0/mo incremental** (VPS already paid). Only cost = domain (~$
 
 ## 9. Risks + mitigations
 
-| Risk | Mitigation |
-|------|------------|
-| Meta revokes oEmbed access | Fall back to plain source link + screenshot with permission |
-| Volunteer content pipeline dries up | Automate PDMA/NDMA ingestion first (independent of volunteers) |
-| Traffic never comes | Outreach to ICIMOD/AKAH/journalists after 3 months of data |
-| Site politicized against govt | Written editorial policy; reject partisan submissions |
-| Solo burnout | Everything documented in plan.md; anyone can pick up from any phase |
-| Legal issue (defamation, copyright) | Attribution + oEmbed + no personal victim data without consent |
+| Risk                                | Mitigation                                                                                                   |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Meta revokes oEmbed access          | Fall back to plain source link + screenshot with permission                                                  |
+| Volunteer content pipeline dries up | Automate PDMA/NDMA ingestion first (independent of volunteers)                                               |
+| Traffic never comes                 | Outreach to ICIMOD/AKAH/journalists after 3 months of data                                                   |
+| Site politicized against govt       | Written editorial policy; reject partisan submissions                                                        |
+| Solo burnout                        | Everything documented in plan.md; anyone can pick up from any phase                                          |
+| Legal issue (defamation, copyright) | Attribution + oEmbed + no personal victim data without consent                                               |
 | VPS down / disk full / RAM pressure | Daily Postgres dump to off-box storage; monitor with existing NPM/host stack; keep container resource limits |
-| Postgres data loss | Nightly `pg_dump` cron → encrypted upload to remote (Backblaze B2 or R2, both cheap/free tier) |
-| DDoS or spike | Cloudflare in front of NPM absorbs most; rate-limit at app + Redis |
+| Postgres data loss                  | Nightly `pg_dump` cron → encrypted upload to remote (Backblaze B2 or R2, both cheap/free tier)               |
+| DDoS or spike                       | Cloudflare in front of NPM absorbs most; rate-limit at app + Redis                                           |
 
 ## 10. Timeline (high-level)
 

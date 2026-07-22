@@ -58,11 +58,27 @@ db/backups/
 credentials.json
 service-account*.json
 
-# Python (if any helper scripts)
+# Python (agents/ + helper scripts)
 __pycache__/
 *.py[cod]
+*.egg-info/
 .venv/
 venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# uv
+.uv-cache/
+
+# Pre-commit
+.pre-commit-cache/
+
+# Trivy / security scanners
+.trivy-cache/
 
 # OS
 .Trash/

@@ -11,11 +11,12 @@ services:
       - pg_data:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro
     ports:
-      - "127.0.0.1:5432:5432"
+      - '127.0.0.1:5432:5432'
     networks:
       - climate_net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-climate_gb} -d ${POSTGRES_DB:-climate_gb}"]
+      test:
+        ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-climate_gb} -d ${POSTGRES_DB:-climate_gb}']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -24,15 +25,15 @@ services:
     image: redis:7-alpine
     container_name: climate_redis
     restart: unless-stopped
-    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    command: ['redis-server', '--maxmemory', '256mb', '--maxmemory-policy', 'allkeys-lru']
     volumes:
       - redis_data:/data
     ports:
-      - "127.0.0.1:6379:6379"
+      - '127.0.0.1:6379:6379'
     networks:
       - climate_net
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 10s
       timeout: 3s
       retries: 5
@@ -55,10 +56,10 @@ services:
       NEXTAUTH_URL: ${NEXTAUTH_URL:?NEXTAUTH_URL is required}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?NEXTAUTH_SECRET is required}
     ports:
-      - "127.0.0.1:3000:3000"
+      - '127.0.0.1:3000:3000'
     networks:
       - climate_net
-    profiles: ["app"]
+    profiles: ['app']
 
   worker:
     build:
@@ -75,7 +76,7 @@ services:
       REDIS_URL: redis://redis:6379
     networks:
       - climate_net
-    profiles: ["app"]
+    profiles: ['app']
 
 volumes:
   pg_data:

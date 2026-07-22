@@ -75,6 +75,7 @@ docker compose exec postgres psql -U climate_gb -d climate_gb \
 ```
 
 **Sanity check:**
+
 - `docker compose ps` shows both containers healthy.
 - `PostGIS_Version()` returns a version.
 - Neither container is exposed to public (ports bound to `127.0.0.1`).
@@ -86,11 +87,13 @@ docker compose exec postgres psql -U climate_gb -d climate_gb \
 ## 0.10 — DNS + Nginx Proxy Manager
 
 **Cloudflare:**
+
 1. Add A record: `climate-gb.<yourdomain>` → VPS public IP.
 2. Proxy status: **Proxied** (orange cloud).
 3. SSL/TLS mode: **Full (strict)** since NPM will present a valid Let's Encrypt cert.
 
 **Nginx Proxy Manager UI:**
+
 1. Proxy Hosts → Add Proxy Host.
    - Domain Names: `climate-gb.<yourdomain>`
    - Scheme: `http`
@@ -121,9 +124,11 @@ docker compose exec postgres psql -U climate_gb -d climate_gb \
 **Network note:** NPM must share a Docker network with `climate_web`. Two options:
 
 - **Option A (recommended):** Attach NPM to `climate_net`:
+
   ```bash
   docker network connect climate_net <npm-container-name>
   ```
+
   Then in NPM use `climate_web:3000` as the forward host.
 
 - **Option B:** Bind `web` to VPS host `127.0.0.1:3000` (already done in compose), then in NPM use `127.0.0.1:3000` as forward host. Works if NPM runs on host network.
@@ -131,6 +136,7 @@ docker compose exec postgres psql -U climate_gb -d climate_gb \
 Pick whichever matches your existing NPM setup.
 
 **Cloudflare page rules (recommended):**
+
 - `climate-gb.<yourdomain>/api/*` → Cache Level: Bypass
 - `climate-gb.<yourdomain>/admin/*` → Cache Level: Bypass, Security Level: High
 - Everything else → default Cloudflare caching
@@ -141,16 +147,17 @@ Pick whichever matches your existing NPM setup.
 
 Options ranked by cost / signal:
 
-| Option | Cost | Notes |
-|--------|------|-------|
-| `climate-gb.<yourdomain>` (subdomain) | $0 | Fastest. Uses domain you already own. |
-| `climate-gb.org` | ~$12/yr | Signals non-profit purpose. |
-| `gbclimate.org` | ~$12/yr | Shorter. |
-| `.pk` domain | Restricted, ~$40/yr, requires local presence | Signals authenticity; slower to obtain. |
+| Option                                | Cost                                         | Notes                                   |
+| ------------------------------------- | -------------------------------------------- | --------------------------------------- |
+| `climate-gb.<yourdomain>` (subdomain) | $0                                           | Fastest. Uses domain you already own.   |
+| `climate-gb.org`                      | ~$12/yr                                      | Signals non-profit purpose.             |
+| `gbclimate.org`                       | ~$12/yr                                      | Shorter.                                |
+| `.pk` domain                          | Restricted, ~$40/yr, requires local presence | Signals authenticity; slower to obtain. |
 
 **Recommendation:** start with a subdomain on a domain you already own. Move to a dedicated domain after v1 traction proves the project has legs.
 
 Once chosen, update `.env` on VPS:
+
 ```bash
 sed -i "s|NEXTAUTH_URL=.*|NEXTAUTH_URL=https://climate-gb.<yourdomain>|" .env
 ```

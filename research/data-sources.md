@@ -5,23 +5,24 @@
 
 ## Summary table
 
-| Source | Purpose | Access | Cost | v1 status |
-|--------|---------|--------|------|-----------|
-| Meta oEmbed (FB/IG/Threads) | Social post embeds | Public HTTP, **no token as of June 2026** | Free | ✅ Ready |
-| Open-Meteo | Weather forecast + history | Public HTTP, no key | Free (10k calls/day, non-commercial) | ✅ Ready |
-| PDMA GB | Provincial alerts | Website scrape (no public API found) | Free | ⚠️ Needs custom scraper |
-| NDMA / NEOC | National advisories | Website (no public API found) | Free | ⚠️ Needs custom scraper |
-| PMD (Pakistan Met Dept) | GLOF + weather advisories | Website + press releases | Free | ⚠️ Needs custom scraper |
-| ICIMOD RDS (rds.icimod.org) | Glacier + glacial lake inventory | Web portal, download endpoints | Free (research use) | 🟨 Manual download → static layer |
-| AKAH hazard maps | 828-village risk assessments | Not public; org outreach | Free (partnership) | ⏭️ Phase 3 (needs relationship) |
-| Pamir Times | GB news feed | Website + WordPress → likely RSS at `/feed` | Free | 🟨 Test RSS in Phase 1 |
-| Ibex Media Network | GB video journalism | FB/IG public pages | Free (via oEmbed) | ✅ Ready |
-| OpenStreetMap | Base map tiles | Public tile server | Free (attribution required) | ✅ Ready |
-| Sentinel Hub | Satellite imagery | Free tier, sign-up | Free (limited) | ⏭️ Phase 3 |
+| Source                      | Purpose                          | Access                                      | Cost                                 | v1 status                         |
+| --------------------------- | -------------------------------- | ------------------------------------------- | ------------------------------------ | --------------------------------- |
+| Meta oEmbed (FB/IG/Threads) | Social post embeds               | Public HTTP, **no token as of June 2026**   | Free                                 | ✅ Ready                          |
+| Open-Meteo                  | Weather forecast + history       | Public HTTP, no key                         | Free (10k calls/day, non-commercial) | ✅ Ready                          |
+| PDMA GB                     | Provincial alerts                | Website scrape (no public API found)        | Free                                 | ⚠️ Needs custom scraper           |
+| NDMA / NEOC                 | National advisories              | Website (no public API found)               | Free                                 | ⚠️ Needs custom scraper           |
+| PMD (Pakistan Met Dept)     | GLOF + weather advisories        | Website + press releases                    | Free                                 | ⚠️ Needs custom scraper           |
+| ICIMOD RDS (rds.icimod.org) | Glacier + glacial lake inventory | Web portal, download endpoints              | Free (research use)                  | 🟨 Manual download → static layer |
+| AKAH hazard maps            | 828-village risk assessments     | Not public; org outreach                    | Free (partnership)                   | ⏭️ Phase 3 (needs relationship)   |
+| Pamir Times                 | GB news feed                     | Website + WordPress → likely RSS at `/feed` | Free                                 | 🟨 Test RSS in Phase 1            |
+| Ibex Media Network          | GB video journalism              | FB/IG public pages                          | Free (via oEmbed)                    | ✅ Ready                          |
+| OpenStreetMap               | Base map tiles                   | Public tile server                          | Free (attribution required)          | ✅ Ready                          |
+| Sentinel Hub                | Satellite imagery                | Free tier, sign-up                          | Free (limited)                       | ⏭️ Phase 3                        |
 
 ## Meta oEmbed — critical update (2026-07-22)
 
 **Big win.** Per Meta's June 15, 2026 policy reversal:
+
 - Facebook + Instagram + Threads oEmbed endpoints work **without access token**.
 - **No App Review required.**
 - **No developer account required.**
@@ -29,11 +30,13 @@
 - Token-based route still exists with higher rate limits if needed later.
 
 **Endpoints:**
+
 - Facebook post: `https://graph.facebook.com/v20.0/oembed_post?url={POST_URL}`
 - Facebook video: `https://graph.facebook.com/v20.0/oembed_video?url={VIDEO_URL}`
 - Instagram: `https://graph.facebook.com/v20.0/instagram_oembed?url={POST_URL}`
 
 **Impact on plan.md:**
+
 - Task 1.D.1 (register Meta app) becomes optional — do only if rate-limited.
 - Task 1.D.3 (oEmbed fetch) simplified — no auth headers.
 - Faster path to launch.
@@ -51,6 +54,7 @@
 ## PDMA GB + NDMA + PMD
 
 No documented public APIs. Options:
+
 1. **Cheerio/Playwright scrape** of alert pages. Fragile but functional.
 2. **RSS feed** if provided (need to check each site).
 3. **Manual admin entry** for high-signal alerts as fallback.
@@ -58,6 +62,7 @@ No documented public APIs. Options:
 **v1 plan:** Start with manual entry via admin. Build scraper opportunistically for the top-1 source (likely PDMA GB advisory page). Don't block launch.
 
 **Sites to inspect:**
+
 - PDMA GB — search "gbdma.gov.pk" or "pdma.gilgitbaltistan.gov.pk"
 - NDMA — ndma.gov.pk
 - PMD — pmd.gov.pk

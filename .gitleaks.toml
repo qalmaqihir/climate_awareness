@@ -1,0 +1,20 @@
+# Extends built-in gitleaks rules. Add project-specific allowlist entries here.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Project-wide allowlist"
+paths = [
+  '''\.env\.example$''',
+  '''\.gitmessage$''',
+  '''research/.*''',
+  '''docs/.*''',
+  '''idea\.md$''',
+  '''plan\.md$''',
+  '''README\.md$''',
+]
+regexes = [
+  # placeholders in .env.example / docs
+  '''(?i)(your[_-]?(api|token|key|secret)[_-]?here)''',
+  '''(?i)example[_-]?(token|key|secret)''',
+]

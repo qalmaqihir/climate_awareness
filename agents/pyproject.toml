@@ -1,0 +1,128 @@
+[project]
+name = "climate-gb-agents"
+version = "0.1.0"
+description = "LangGraph AI agents for Climate Awareness GB"
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "MIT" }
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "bandit[toml]>=1.8",
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "pytest-asyncio>=0.24",
+    "pip-audit>=2.7",
+]
+
+# --------------------- Ruff (lint + format) ---------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv", "build", "dist", "migrations"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "S",    # flake8-bandit (subset)
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific
+    "C4",   # flake8-comprehensions
+    "TCH",  # flake8-type-checking
+    "ARG",  # flake8-unused-arguments
+    "PTH",  # flake8-use-pathlib
+    "PL",   # pylint (subset)
+]
+ignore = [
+    "E501",     # line length handled by formatter
+    "PLR0913",  # too many args (LangGraph nodes often have many)
+    "PLR2004",  # magic values (noisy in prototyping)
+    "S101",     # assert (fine in tests)
+    "S311",     # non-crypto random (fine for jitter/backoff)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "PLR", "ARG", "PTH"]
+"**/__init__.py" = ["F401"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+# --------------------- Mypy ---------------------
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_return_any = true
+show_error_codes = true
+pretty = true
+exclude = ["^tests/", "^build/", "^\\.venv/"]
+# Relax when third-party libs lack stubs — set true when everything typed:
+disallow_any_unimported = false
+follow_imports = "normal"
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+check_untyped_defs = false
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+# LangGraph / LangChain often ship partial stubs; relax until upstream settles.
+module = ["langgraph.*", "langchain.*", "langchain_core.*", "langsmith.*"]
+ignore_missing_imports = true
+
+# --------------------- Bandit ---------------------
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "build"]
+skips = ["B101"]  # assert_used — safe in tests
+
+# --------------------- Pytest ---------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--cov=.",
+    "--cov-report=term-missing",
+    "--cov-report=xml",
+    "--cov-fail-under=60",
+]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "integration: hits external services (may be slow)",
+    "slow: takes > 1s",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["."]
+omit = [
+    "tests/*",
+    "**/__init__.py",
+    ".venv/*",
+    "build/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]

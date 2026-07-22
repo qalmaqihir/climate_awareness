@@ -1,0 +1,9 @@
+# Default owner for everything in this repo.
+* @qalmaqihir
+
+# Sub-tree owners (adjust when collaborators join).
+/agents/         @qalmaqihir
+/web/            @qalmaqihir
+/db/             @qalmaqihir
+/docs/           @qalmaqihir
+/.github/        @qalmaqihir
