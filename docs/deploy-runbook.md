@@ -265,11 +265,13 @@ cd /opt/climate-gb
 git pull origin main
 
 # 2. Run pending DB migrations
-#    The 'tools' service (profile 'tools') runs migrate.ts against the live DB and exits.
-docker compose --profile tools run --rm tools pnpm db:migrate
+#    --build is required: migration SQL files are baked into the image.
+#    Without it, Docker uses a cached image that may contain old migration files.
+docker compose --profile tools run --rm --build tools pnpm db:migrate
 
 # 3. Rebuild and restart app containers (zero-downtime via Docker restart policy)
-docker compose up -d --build web worker
+#    --profile app is required: web and worker are behind the 'app' profile.
+docker compose --profile app up -d --build web worker
 
 # 4. Verify
 docker compose ps
@@ -279,9 +281,9 @@ docker compose logs worker --tail 30
 
 **Migration notes:**
 
-- `docker compose run --rm cli` runs `drizzle-kit migrate` against `DATABASE_URL`.
+- `docker compose --profile tools run --rm --build tools pnpm db:migrate` runs `scripts/migrate.ts` against `DATABASE_URL`.
   Never apply `.sql` files by hand — let Drizzle track migration state.
-- If the `cli` service exits non-zero, fix the migration before restarting `web`/`worker`.
+- If the `tools` service exits non-zero, fix the migration before restarting `web`/`worker`.
 - New indexes (e.g. `0003_steady_black_queen.sql`) are non-destructive — safe to apply
   on a live DB. Postgres adds them without locking reads.
 
