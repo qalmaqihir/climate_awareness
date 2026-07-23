@@ -59,7 +59,7 @@ jobs:
       - id: check
         run: echo "exists=$([ -f web/package.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - if: steps.check.outputs.exists == 'true'
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 9
       - if: steps.check.outputs.exists == 'true'
