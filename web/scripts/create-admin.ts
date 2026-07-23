@@ -22,21 +22,28 @@ if (!process.env.DATABASE_URL) {
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const db = drizzle(pool);
 
-const passwordHash = await hash(password, 12);
+async function main() {
+  const passwordHash = await hash(password, 12);
 
-await db
-  .insert(users)
-  .values({
-    email,
-    name: email.split('@')[0],
-    passwordHash,
-    isAdmin: true,
-  })
-  .onConflictDoUpdate({
-    target: users.email,
-    set: { passwordHash, isAdmin: true },
-  });
+  await db
+    .insert(users)
+    .values({
+      email,
+      name: email.split('@')[0],
+      passwordHash,
+      isAdmin: true,
+    })
+    .onConflictDoUpdate({
+      target: users.email,
+      set: { passwordHash, isAdmin: true },
+    });
 
-console.log(`✓ Admin user created/updated: ${email}`);
-console.log(`  Add ${email} to ADMIN_EMAILS in .env`);
-await pool.end();
+  console.log(`✓ Admin user created/updated: ${email}`);
+  console.log(`  Add ${email} to ADMIN_EMAILS in .env`);
+  await pool.end();
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
