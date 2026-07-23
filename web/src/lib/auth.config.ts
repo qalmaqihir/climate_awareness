@@ -5,6 +5,7 @@ import type { NextAuthConfig } from 'next-auth';
  * Used by middleware (Edge Runtime). Full auth config is in auth.ts (Node.js only).
  */
 export const authConfig: NextAuthConfig = {
+  trustHost: true,
   session: { strategy: 'jwt' },
   pages: {
     signIn: '/admin/login',
