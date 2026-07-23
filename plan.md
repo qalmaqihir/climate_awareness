@@ -1,8 +1,8 @@
 # Climate Awareness GB — Implementation Plan
 
 **Companion to:** `idea.md`
-**Last updated:** 2026-07-22
-**Current phase:** Phase 0 (setup)
+**Last updated:** 2026-07-23
+**Current phase:** Phase 1.G (VPS deploy) — awaiting user runbook execution
 **Resume rule:** Always read this file top-to-bottom before resuming work. Update the **Status** column of every task as you go.
 
 ---
@@ -223,67 +223,67 @@ create table weather_snapshots (
 
 ## 1.C — Map view (Week 2)
 
-| #     | Task                                                                     | Status | Notes                                   |
-| ----- | ------------------------------------------------------------------------ | ------ | --------------------------------------- |
-| 1.C.1 | `/map` client component with MapLibre + OSM tiles                        | ⬜     | Center on Gilgit ~35.9°N 74.3°E, zoom 8 |
-| 1.C.2 | Server action to fetch events (filter by date + type + district)         | ⬜     |                                         |
-| 1.C.3 | Render pins with clustering (supercluster)                               | ⬜     |                                         |
-| 1.C.4 | Pin colors by `event_type`, size by `severity`                           | ⬜     |                                         |
-| 1.C.5 | Sidebar filter panel: event type checkboxes, date range, district select | ⬜     |                                         |
-| 1.C.6 | Click pin → popup with summary + source link + "View details"            | ⬜     |                                         |
-| 1.C.7 | Event detail page `/events/[id]` with oEmbed render + weather-at-time    | ⬜     |                                         |
-| 1.C.8 | GB boundary overlay (GeoJSON from OSM or admin dataset)                  | ⬜     | Visual context                          |
+| #     | Task                                                                     | Status | Notes                                                                    |
+| ----- | ------------------------------------------------------------------------ | ------ | ------------------------------------------------------------------------ |
+| 1.C.1 | `/map` client component with MapLibre + OSM tiles                        | ✅     | OpenFreeMap Positron tiles (no token). SSR-off via `dynamic()`.          |
+| 1.C.2 | Server action to fetch events (filter by date + type + district)         | ✅     | `/api/events` GeoJSON route. `getEvents(filters?)` in `queries.ts`.      |
+| 1.C.3 | Render pins with clustering (supercluster)                               | ✅     | Native MapLibre cluster on GeoJSON Source. Teal/blue/purple by count.    |
+| 1.C.4 | Pin colors by `event_type`, size by `severity`                           | ✅     | `EVENT_TYPE_COLORS` + severity radius expression in `MapView.tsx`.       |
+| 1.C.5 | Sidebar filter panel: event type checkboxes, date range, district select | ✅     | Client-side `useMemo` filter on full GeoJSON. Toggle button.             |
+| 1.C.6 | Click pin → popup with summary + source link + "View details"            | ✅     | MapLibre Popup. Click cluster → zoom; click pin → popup.                 |
+| 1.C.7 | Event detail page `/events/[id]` with oEmbed render + weather-at-time    | ✅     | `app/events/[id]/page.tsx` — type/severity/verified badges, `embedHtml`. |
+| 1.C.8 | GB boundary overlay (GeoJSON from OSM or admin dataset)                  | ⏭️     | Deferred. Map pin density already provides spatial context for v1.       |
 
 **Verification:** Manually seed 10 events across GB districts; verify clustering, filters, detail pages.
 **Commit:** `feat: interactive map with event pins, filters, detail view`
 
 ## 1.D — Admin panel + NextAuth + Meta oEmbed (Week 2–3)
 
-| #     | Task                                                                               | Status | Notes                                                              |
-| ----- | ---------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------ |
-| 1.D.1 | Meta oEmbed integration (tokenless, no app registration)                           | ⬜     | Server fetch → parse JSON. Add token fallback path in abstraction. |
-| 1.D.2 | NextAuth.js config with Credentials provider + Drizzle adapter                     | ⬜     | `web/app/api/auth/[...nextauth]/route.ts`                          |
-| 1.D.3 | Admin allowlist: seed 1-3 admin users with bcrypt-hashed passwords via CLI script  | ⬜     | `pnpm tsx scripts/create-admin.ts <email>`                         |
-| 1.D.4 | `/admin` route + middleware: reject if not authenticated + not in admin role       | ⬜     | Middleware check role from session                                 |
-| 1.D.5 | New event form: paste URL → server fetches oEmbed → prefill form                   | ⬜     | Support FB + IG URLs                                               |
-| 1.D.6 | Manual fields: event type, severity, occurred_at, valley, district, lat/lng picker | ⬜     | Lat/lng via map click                                              |
-| 1.D.7 | Save event → server action → Drizzle insert                                        | ⬜     |                                                                    |
-| 1.D.8 | Edit + delete existing events                                                      | ⬜     | Soft-delete preferred (deleted_at)                                 |
-| 1.D.9 | Admin dashboard: event count, pending review queue, recent alerts                  | ⬜     |                                                                    |
+| #     | Task                                                                               | Status | Notes                                                                                      |
+| ----- | ---------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------ |
+| 1.D.1 | Meta oEmbed integration (tokenless, no app registration)                           | ✅     | `lib/oembed.ts` — detects FB/IG, calls Meta oEmbed v22.0 (tokenless).                      |
+| 1.D.2 | NextAuth.js config with Credentials provider + Drizzle adapter                     | ✅     | `lib/auth.ts` + `api/auth/[...nextauth]/route.ts`. NextAuth v5 beta.                       |
+| 1.D.3 | Admin allowlist: seed 1-3 admin users with bcrypt-hashed passwords via CLI script  | ✅     | `scripts/create-admin.ts` → `pnpm admin:create <email> <password>`                         |
+| 1.D.4 | `/admin` route + middleware: reject if not authenticated + not in admin role       | ✅     | `middleware.ts` + `admin/layout.tsx` double-check. `isAdmin` JWT claim.                    |
+| 1.D.5 | New event form: paste URL → server fetches oEmbed → prefill form                   | ✅     | `admin/events/new/page.tsx`. Paste URL → `GET /api/admin/oembed?url=` → prefill.           |
+| 1.D.6 | Manual fields: event type, severity, occurred_at, valley, district, lat/lng picker | ✅     | All fields in new/edit form. Lat/lng entered manually (map click deferred to v2).          |
+| 1.D.7 | Save event → server action → Drizzle insert                                        | ✅     | `POST /api/admin/events` with Zod validation. `POINT(lng lat)` WKT via PostGIS.            |
+| 1.D.8 | Edit + delete existing events                                                      | ✅     | `PATCH /api/admin/events/[id]` (partial update), `DELETE` → soft-delete (status=archived). |
+| 1.D.9 | Admin dashboard: event count, pending review queue, recent alerts                  | ✅     | `admin/page.tsx` — 3 stat boxes, events table, alerts sidebar.                             |
 
 **Verification:** Log in, create event via oEmbed, edit it, delete it. All flows work.
 **Commit:** `feat: admin panel with Meta oEmbed ingestion`
 
 ## 1.E — Alerts + weather + worker cron (Week 3)
 
-| #     | Task                                                                                                | Status | Notes                                                          |
-| ----- | --------------------------------------------------------------------------------------------------- | ------ | -------------------------------------------------------------- |
-| 1.E.1 | Confirm PDMA GB feed source (RSS? scrape?). Document in `research/`                                 | ⬜     | Try `pmd.gov.pk`, `ndma.gov.pk` first — likely more accessible |
-| 1.E.2 | Build `worker/` service (Node + TypeScript + `node-cron`) in Docker                                 | ⬜     | Separate container from `web/`, shares DB                      |
-| 1.E.3 | Cron job: hourly `refresh-alerts` — Cheerio scrape → upsert into `alerts` (dedupe by `source_url`)  | ⬜     |                                                                |
-| 1.E.4 | `/alerts` page: list active alerts, severity badges, region filter                                  | ⬜     |                                                                |
-| 1.E.5 | Home page shows top 3 active alerts                                                                 | ⬜     |                                                                |
-| 1.E.6 | Open-Meteo integration in worker: refresh weather cache for pinned valleys every 6h                 | ⬜     | Store in `weather_snapshots`                                   |
-| 1.E.7 | On new event save: web triggers on-demand weather snapshot fetch (historical Open-Meteo `/archive`) | ⬜     |                                                                |
-| 1.E.8 | Event detail page shows weather-at-time (nearest snapshot)                                          | ⬜     |                                                                |
-| 1.E.9 | Worker logs to stdout → Docker log driver → optional Loki/Promtail later                            | ⬜     | Keep simple v1                                                 |
+| #     | Task                                                                                                | Status | Notes                                                                                    |
+| ----- | --------------------------------------------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------- |
+| 1.E.1 | Confirm PDMA GB feed source (RSS? scrape?). Document in `research/`                                 | 🟨     | Manual alert entry via admin for now. Scraper deferred to 1.E.3 post-deploy.             |
+| 1.E.2 | Build `worker/` service (Node + TypeScript + `node-cron`) in Docker                                 | ✅     | `worker/src/index.ts` with SIGTERM handler. `worker/Dockerfile` (node:22-alpine).        |
+| 1.E.3 | Cron job: hourly `refresh-alerts` — Cheerio scrape → upsert into `alerts` (dedupe by `source_url`)  | 🟨     | `check-pdma.ts` stub written. Full scraper after deploy when real feeds confirmed.       |
+| 1.E.4 | `/alerts` page: list active alerts, severity badges, region filter                                  | ✅     | Done in Phase 1.F. DB-backed, grouped by level (emergency/warning/watch/advisory).       |
+| 1.E.5 | Home page shows top 3 active alerts                                                                 | ✅     | Alert count in home hero — pulse badge if alerts > 0, link to /alerts.                   |
+| 1.E.6 | Open-Meteo integration in worker: refresh weather cache for pinned valleys every 6h                 | ✅     | `refresh-weather.ts` — 6 GB districts, Open-Meteo `current`, upsert `weather_snapshots`. |
+| 1.E.7 | On new event save: web triggers on-demand weather snapshot fetch (historical Open-Meteo `/archive`) | ⏭️     | Deferred. Historical weather on event detail is v2 scope.                                |
+| 1.E.8 | Event detail page shows weather-at-time (nearest snapshot)                                          | ⏭️     | Deferred. v2 scope.                                                                      |
+| 1.E.9 | Worker logs to stdout → Docker log driver → optional Loki/Promtail later                            | ✅     | stdout only in v1. `docker compose logs worker` sufficient.                              |
 
 **Verification:** Trigger cron manually, confirm alerts appear, weather renders on event page.
 **Commit:** `feat: alerts feed + weather integration via cron`
 
 ## 1.F — Home page + share + polish (Week 4)
 
-| #     | Task                                                                          | Status | Notes                           |
-| ----- | ----------------------------------------------------------------------------- | ------ | ------------------------------- |
-| 1.F.1 | Home hero: map preview, live stats ("N events in 30 days", "N alerts active") | ⬜     |                                 |
-| 1.F.2 | Recent events feed (3 latest with embed)                                      | ⬜     |                                 |
-| 1.F.3 | Share buttons: Twitter/X, Facebook, WhatsApp, copy link                       | ⬜     | Pre-filled with tag suggestions |
-| 1.F.4 | About page: mission, sources, editorial policy, contact                       | ⬜     | Copy from `idea.md` §2, §6      |
-| 1.F.5 | Take Action page: how to share, orgs to tag, donation links (AKAH, UNDP)      | ⬜     |                                 |
-| 1.F.6 | SEO: metadata, OpenGraph, sitemap, robots.txt                                 | ⬜     |                                 |
-| 1.F.7 | Analytics: Plausible or Vercel Analytics (privacy-friendly)                   | ⬜     |                                 |
-| 1.F.8 | Accessibility pass: alt text, keyboard nav, color contrast                    | ⬜     |                                 |
-| 1.F.9 | Open data endpoint: `/api/events.geojson` + `/api/events.csv`                 | ⬜     | Public, CORS enabled            |
+| #     | Task                                                                          | Status | Notes                                                                                    |
+| ----- | ----------------------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------- |
+| 1.F.1 | Home hero: map preview, live stats ("N events in 30 days", "N alerts active") | ✅     | Topographic SVG hero, Playfair Display, dark stats strip with `<StatCounter>` animation. |
+| 1.F.2 | Recent events feed (3 latest with embed)                                      | ✅     | 3-card grid from DB, linked to `/events/[id]`, type badge + district + date.             |
+| 1.F.3 | Share buttons: Twitter/X, Facebook, WhatsApp, copy link                       | ✅     | `<ShareButtons>` client component. Pre-filled tweet includes event count from DB.        |
+| 1.F.4 | About page: mission, sources, editorial policy, contact                       | ✅     | 7 sources, 6 editorial principles, v2/v3 roadmap, open data links, `info@naseyou.nl`.    |
+| 1.F.5 | Take Action page: how to share, orgs to tag, donation links (AKAH, UNDP)      | ✅     | Pre-filled tweet + WA, 4 org cards (AKAH/UNDP GLOF-II/PMD/ICIMOD), journalist section.   |
+| 1.F.6 | SEO: metadata, OpenGraph, sitemap, robots.txt                                 | ✅     | `metadataBase`, OG + Twitter card in layout. `sitemap.ts` + `robots.ts` via App Router.  |
+| 1.F.7 | Analytics: Plausible or Vercel Analytics (privacy-friendly)                   | ⏭️     | Deferred. Add `NEXT_PUBLIC_PLAUSIBLE_DOMAIN` script in layout when domain confirmed.     |
+| 1.F.8 | Accessibility pass: alt text, keyboard nav, color contrast                    | ⏭️     | Core semantic HTML + `aria-hidden` on decorative SVGs done. Full audit deferred post-v1. |
+| 1.F.9 | Open data endpoint: `/api/events.geojson` + `/api/events.csv`                 | ✅     | `/api/events` (GeoJSON) + `/api/events/csv` (13-col CSV). Both CORS + cache headers.     |
 
 **Verification:** Full manual click-through, Lighthouse ≥ 90 on all pages, share links work in prod.
 **Commit:** `feat: home page, share, take action, open data, SEO`
