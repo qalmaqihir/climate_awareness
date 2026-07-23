@@ -2,10 +2,11 @@
  * LangGraph RAG pipeline for Climate Awareness GB.
  *
  * Graph flow:
- *   START → guardrails → [blocked? → END] or [retrieve → generate → END]
+ *   START → guardrails → [blockQuery → END] or [retrieve → generate → END]
  *
  * Nodes:
  *   guardrails — fast keyword check; no LLM cost
+ *   blockQuery — returns guardrail rejection message (node name avoids conflict with state.blocked)
  *   retrieve   — hybrid pgvector + full-text search with RRF fusion
  *   generate   — LLM answer grounded in retrieved context, with citations
  */
@@ -144,8 +145,8 @@ async function blockedNode(state: typeof AgentState.State) {
 
 // ─── Routing ──────────────────────────────────────────────────────────────────
 
-function routeAfterGuardrails(state: typeof AgentState.State): 'retrieve' | 'blocked' {
-  return state.blocked ? 'blocked' : 'retrieve';
+function routeAfterGuardrails(state: typeof AgentState.State): 'retrieve' | 'blockQuery' {
+  return state.blocked ? 'blockQuery' : 'retrieve';
 }
 
 // ─── Graph ────────────────────────────────────────────────────────────────────
@@ -155,12 +156,12 @@ export function buildRAGGraph() {
     .addNode('guardrails', guardrailsNode)
     .addNode('retrieve', retrieveNode)
     .addNode('generate', generateNode)
-    .addNode('blocked', blockedNode)
+    .addNode('blockQuery', blockedNode)
     .addEdge(START, 'guardrails')
     .addConditionalEdges('guardrails', routeAfterGuardrails)
     .addEdge('retrieve', 'generate')
     .addEdge('generate', END)
-    .addEdge('blocked', END)
+    .addEdge('blockQuery', END)
     .compile();
 }
 
