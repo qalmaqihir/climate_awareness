@@ -35,6 +35,7 @@ const vector = (name: string, dimensions: number) =>
       return `[${value.join(',')}]`;
     },
     fromDriver(value: string): number[] {
+      if (!value) return [];
       return value.slice(1, -1).split(',').map(Number);
     },
   })(name);
@@ -92,6 +93,8 @@ export const events = pgTable(
     index('events_reported_at_idx').on(t.reportedAt),
     index('events_district_idx').on(t.district),
     index('events_status_idx').on(t.status),
+    // Composite index for the most common query: verified events ordered by date
+    index('events_status_reported_at_idx').on(t.status, t.reportedAt),
   ],
 );
 
@@ -120,36 +123,52 @@ export const alerts = pgTable(
   (t) => [
     index('alerts_is_active_idx').on(t.isActive),
     index('alerts_issued_at_idx').on(t.issuedAt),
+    // Index for deduplication query in the worker scraper
+    index('alerts_source_url_idx').on(t.sourceUrl),
   ],
 );
 
 // ─── weather_snapshots ────────────────────────────────────────────────────────
 // Cached Open-Meteo responses, refreshed by worker on schedule
-export const weatherSnapshots = pgTable('weather_snapshots', {
-  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
-  district: text('district').notNull(),
-  latitude: real('latitude').notNull(),
-  longitude: real('longitude').notNull(),
-  temperatureCelsius: real('temperature_celsius'),
-  precipitationMm: real('precipitation_mm'),
-  windspeedKmh: real('windspeed_kmh'),
-  weatherCode: integer('weather_code'),
-  rawJson: text('raw_json'),
-  fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const weatherSnapshots = pgTable(
+  'weather_snapshots',
+  {
+    id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+    district: text('district').notNull(),
+    latitude: real('latitude').notNull(),
+    longitude: real('longitude').notNull(),
+    temperatureCelsius: real('temperature_celsius'),
+    precipitationMm: real('precipitation_mm'),
+    windspeedKmh: real('windspeed_kmh'),
+    weatherCode: integer('weather_code'),
+    rawJson: text('raw_json'),
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Supports "latest per district" queries and 48h cleanup
+    index('weather_snapshots_district_fetched_idx').on(t.district, t.fetchedAt),
+  ],
+);
 
 // ─── query_logs ───────────────────────────────────────────────────────────────
 // RAG agent usage log. No PII — query and IP are SHA-256 hashed before storage.
-export const queryLogs = pgTable('query_logs', {
-  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
-  queryHash: text('query_hash').notNull(),
-  ipHash: text('ip_hash').notNull(),
-  docCount: integer('doc_count'),
-  modelUsed: text('model_used'),
-  durationMs: integer('duration_ms'),
-  blocked: boolean('blocked').notNull().default(false),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const queryLogs = pgTable(
+  'query_logs',
+  {
+    id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+    queryHash: text('query_hash').notNull(),
+    ipHash: text('ip_hash').notNull(),
+    docCount: integer('doc_count'),
+    modelUsed: text('model_used'),
+    durationMs: integer('duration_ms'),
+    blocked: boolean('blocked').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Supports the 90-day retention cleanup query
+    index('query_logs_created_at_idx').on(t.createdAt),
+  ],
+);
 
 // ─── NextAuth tables (required by @auth/drizzle-adapter) ──────────────────────
 export const users = pgTable('user', {
