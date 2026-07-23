@@ -7,11 +7,21 @@
  * No persistent state here — Edge Runtime restarts between deployments.
  */
 
-export function isIpPermanentlyBlocked(ip: string): boolean {
+// Parsed once at module load — middleware runs on every request so re-parsing is wasteful.
+const BLOCKED_IP_SET: Set<string> = (() => {
   const raw = process.env.BLOCKED_IPS ?? '';
-  if (!raw) return false;
-  const list = raw.split(',').map((s) => s.trim());
-  return list.includes(ip);
+  if (!raw) return new Set<string>();
+  return new Set(
+    raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+})();
+
+export function isIpPermanentlyBlocked(ip: string): boolean {
+  if (BLOCKED_IP_SET.size === 0) return false;
+  return BLOCKED_IP_SET.has(ip);
 }
 
 // Known AI training scrapers and mass-crawlers — blocked at middleware level.

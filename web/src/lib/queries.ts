@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { db } from './db';
 import { alerts, events, sources } from './schema';
 import type { EventSeverity, EventStatus, EventType } from './schema';
@@ -96,10 +96,11 @@ export async function getEventById(id: number): Promise<EventRow | null> {
 }
 
 export async function getActiveAlerts(limit = 10) {
+  const now = new Date();
   return db
     .select()
     .from(alerts)
-    .where(eq(alerts.isActive, true))
+    .where(and(eq(alerts.isActive, true), or(isNull(alerts.expiresAt), gte(alerts.expiresAt, now))))
     .orderBy(desc(alerts.issuedAt))
     .limit(limit);
 }

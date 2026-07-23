@@ -75,9 +75,12 @@ async function getSourceId(slug: string): Promise<number | null> {
   return (res.rows[0]?.id as number) ?? null;
 }
 
-async function alertExists(sourceUrl: string): Promise<boolean> {
-  const res = await db.execute(sql`SELECT 1 FROM alerts WHERE source_url = ${sourceUrl} LIMIT 1`);
-  return res.rows.length > 0;
+async function getExistingUrlSet(urls: string[]): Promise<Set<string>> {
+  if (urls.length === 0) return new Set();
+  const res = await db.execute(
+    sql`SELECT source_url FROM alerts WHERE source_url = ANY(${urls}::text[])`,
+  );
+  return new Set(res.rows.map((r) => r.source_url as string));
 }
 
 async function insertAlert(params: {
@@ -145,6 +148,9 @@ async function scrapeReliefWeb(sourceId: number | null) {
   const json = (await res.json()) as { data?: Array<{ fields: Record<string, unknown> }> };
   const items = json.data ?? [];
 
+  const candidateUrls = items.map((i) => String(i.fields.url ?? '').trim()).filter(Boolean);
+  const existingUrls = await getExistingUrlSet(candidateUrls);
+
   let inserted = 0;
   for (const item of items) {
     const f = item.fields;
@@ -155,7 +161,7 @@ async function scrapeReliefWeb(sourceId: number | null) {
     const issuedAt = dateStr ? new Date(dateStr) : new Date();
 
     if (!title || !isGbRelevant(title + ' ' + body)) continue;
-    if (url && (await alertExists(url))) continue;
+    if (url && existingUrls.has(url)) continue;
 
     const combined = title + ' ' + body;
     await insertAlert({
@@ -215,6 +221,11 @@ async function scrapePamirTimes(sourceId: number | null) {
     'warning',
   ];
 
+  const pamirCandidateUrls = items
+    .map((el) => $('link', el).text().trim() || $('guid', el).text().trim())
+    .filter(Boolean);
+  const pamirExistingUrls = await getExistingUrlSet(pamirCandidateUrls);
+
   let inserted = 0;
 
   for (const el of items) {
@@ -236,7 +247,7 @@ async function scrapePamirTimes(sourceId: number | null) {
     if (!DISASTER_KEYWORDS.some((kw) => combined.includes(kw))) continue;
 
     const sourceUrl = link || null;
-    if (sourceUrl && (await alertExists(sourceUrl))) continue;
+    if (sourceUrl && pamirExistingUrls.has(sourceUrl)) continue;
 
     const issuedAt = pubDateRaw ? new Date(pubDateRaw) : new Date();
     const safeDate = isNaN(issuedAt.getTime()) ? new Date() : issuedAt;
@@ -280,6 +291,11 @@ async function scrapeGDACS(sourceId: number | null) {
   const $ = cheerio.load(xml, { xml: true });
   const items = $('item').toArray();
 
+  const gdacsCandidateUrls = items
+    .map((el) => $('link', el).text().trim() || $('guid', el).text().trim())
+    .filter(Boolean);
+  const gdacsExistingUrls = await getExistingUrlSet(gdacsCandidateUrls);
+
   let inserted = 0;
 
   for (const el of items) {
@@ -300,7 +316,7 @@ async function scrapeGDACS(sourceId: number | null) {
     if (!isPakistanRelevant(combined)) continue;
 
     const sourceUrl = link || null;
-    if (sourceUrl && (await alertExists(sourceUrl))) continue;
+    if (sourceUrl && gdacsExistingUrls.has(sourceUrl)) continue;
 
     const issuedAt = pubDateRaw ? new Date(pubDateRaw) : new Date();
     const safeDate = isNaN(issuedAt.getTime()) ? new Date() : issuedAt;

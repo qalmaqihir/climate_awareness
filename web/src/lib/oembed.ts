@@ -48,6 +48,7 @@ export async function fetchOEmbed(postUrl: string): Promise<OEmbedResult> {
     headers: { Accept: 'application/json' },
     next: { revalidate: 3600 },
     signal: AbortSignal.timeout(8000),
+    redirect: 'error',
   });
 
   if (!res.ok) {

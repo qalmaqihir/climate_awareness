@@ -44,8 +44,12 @@ export async function POST(req: NextRequest) {
 
   const startMs = Date.now();
   const encoder = new TextEncoder();
+  const abortController = new AbortController();
 
   const stream = new ReadableStream({
+    cancel() {
+      abortController.abort();
+    },
     async start(controller) {
       const send = (data: object) => {
         try {
@@ -62,7 +66,10 @@ export async function POST(req: NextRequest) {
       let citations: Citation[] = [];
 
       try {
-        const eventStream = graph.streamEvents({ query }, { version: 'v2' });
+        const eventStream = graph.streamEvents(
+          { query },
+          { version: 'v2', signal: abortController.signal },
+        );
 
         for await (const { event, name, data } of eventStream) {
           // Stream tokens from the LLM as they arrive

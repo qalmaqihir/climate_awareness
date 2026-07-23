@@ -12,6 +12,7 @@
  */
 import { Annotation, StateGraph, START, END } from '@langchain/langgraph';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import type { RunnableConfig } from '@langchain/core/runnables';
 import { createChatModel } from './llm';
 import { embedQuery } from './embed';
 import { searchSimilar } from './vectorstore';
@@ -80,7 +81,7 @@ async function retrieveNode(state: typeof AgentState.State) {
   return { docs };
 }
 
-async function generateNode(state: typeof AgentState.State) {
+async function generateNode(state: typeof AgentState.State, config?: RunnableConfig) {
   const model = createChatModel(true); // streaming enabled
 
   const contextBlock =
@@ -105,12 +106,15 @@ async function generateNode(state: typeof AgentState.State) {
       : 'No relevant verified events found in the database for this query. ' +
         'Do not speculate or invent events — tell the user the database has no matching data.';
 
-  const response = await model.invoke([
-    new SystemMessage(buildSystemPrompt()),
-    new HumanMessage(
-      `Verified GB Climate Event Data:\n\n${contextBlock}\n\nQuestion: ${state.query}`,
-    ),
-  ]);
+  const response = await model.invoke(
+    [
+      new SystemMessage(buildSystemPrompt()),
+      new HumanMessage(
+        `Verified GB Climate Event Data:\n\n${contextBlock}\n\nQuestion: ${state.query}`,
+      ),
+    ],
+    config?.signal ? { signal: config.signal } : undefined,
+  );
 
   const answer =
     typeof response.content === 'string'

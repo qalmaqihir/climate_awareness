@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { refreshWeather } from './jobs/refresh-weather.js';
 import { checkAlerts } from './jobs/check-alerts.js';
 import { embedUnindexedEvents } from './jobs/embed-events.js';
+import { runCleanup } from './jobs/cleanup.js';
 import { pool } from './db.js';
 
 console.log('[worker] Starting Climate Awareness GB worker');
@@ -27,6 +28,12 @@ cron.schedule('0 * * * *', async () => {
 cron.schedule('*/15 * * * *', async () => {
   console.log('[cron] Triggering embedding job');
   await embedUnindexedEvents().catch((e) => console.error('[cron] embed error:', e));
+});
+
+// Prune old query_logs daily at 03:00
+cron.schedule('0 3 * * *', async () => {
+  console.log('[cron] Triggering cleanup job');
+  await runCleanup().catch((e) => console.error('[cron] cleanup error:', e));
 });
 
 console.log('[worker] Crons scheduled. Running initial jobs…');

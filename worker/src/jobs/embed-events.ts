@@ -91,7 +91,9 @@ export async function embedUnindexedEvents() {
       for (let j = 0; j < batch.length; j++) {
         const id = batch[j].id as number;
         const vec = `[${embeddings[j].join(',')}]`;
-        await db.execute(sql`UPDATE events SET embedding_v1 = ${vec}::vector WHERE id = ${id}`);
+        await db.execute(
+          sql`UPDATE events SET embedding_v1 = ${vec}::vector, updated_at = NOW() WHERE id = ${id}`,
+        );
       }
 
       embedded += batch.length;
