@@ -79,6 +79,24 @@ services:
       - climate_net
     profiles: ['app']
 
+  # One-off CLI container for migrations, seeding, and admin creation.
+  # Uses the builder stage (has pnpm + tsx + drizzle-kit).
+  # Run: docker compose --profile tools run --rm tools <command>
+  tools:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      target: builder
+    working_dir: /app
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-climate_gb}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-climate_gb}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - climate_net
+    profiles: ['tools']
+
 volumes:
   pg_data:
     driver: local
