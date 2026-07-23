@@ -2,7 +2,10 @@
  * Seeds verified historical GB climate disaster events for RAG retrieval.
  * All events are sourced from NDMA, ICIMOD, ReliefWeb, or Pamir Times records.
  * Run: pnpm db:seed-events
- * Safe to re-run — onConflictDoNothing skips existing source_url matches.
+ * Safe to re-run — dedup by title skips existing events.
+ *
+ * If you need to fix source URLs on already-seeded events, run:
+ *   pnpm db:fix-source-urls
  */
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
@@ -24,6 +27,17 @@ interface EventSeed {
   sourceSlug: string;
 }
 
+// Stable, verified source URLs
+const RW_2022 = 'https://reliefweb.int/disasters/fl-2022-000332-pak';
+const RW_2021 = 'https://reliefweb.int/disasters/fl-2021-000141-pak';
+const RW_PAK = 'https://reliefweb.int/country/pak';
+const PT_2022 =
+  'https://pamirtimes.net/2022/08/26/110-flashflood-disasters-in-gilgit-baltistan-since-july-2022-official-report/';
+const PT_ATTABAD_2023 =
+  'https://pamirtimes.net/2023/04/09/hunza-businesses-worried-about-delays-in-reconstruction-of-collapsed-bridge/';
+const ICIMOD_GLOF =
+  'https://www.icimod.org/increasing-risk-of-glacial-lake-outburst-floods-in-hunza-river-basin/';
+
 const EVENTS: EventSeed[] = [
   // ─── 2022 — Record monsoon season (66% above-normal rainfall in GB) ──────────
   {
@@ -36,7 +50,7 @@ const EVENTS: EventSeed[] = [
     locationName: 'Hassanabad, Hunza Valley',
     affectedCount: 2800,
     reportedAt: '2022-05-07',
-    sourceUrl: 'https://reliefweb.int/report/pakistan/pakistan-glacial-lake-outburst-floods-2022',
+    sourceUrl: RW_2022,
     sourceSlug: 'reliefweb',
   },
   {
@@ -49,7 +63,7 @@ const EVENTS: EventSeed[] = [
     locationName: 'Hassanabad/Aliabad, Hunza',
     affectedCount: 1200,
     reportedAt: '2022-10-12',
-    sourceUrl: 'https://www.icimod.org/article/glacial-lake-outburst-floods-in-the-hunza-valley',
+    sourceUrl: ICIMOD_GLOF,
     sourceSlug: 'icimod',
   },
   {
@@ -62,8 +76,8 @@ const EVENTS: EventSeed[] = [
     locationName: 'Gilgit City, Jutial, Danyore',
     affectedCount: 3200,
     reportedAt: '2022-08-18',
-    sourceUrl: 'https://ndma.gov.pk/disaster-reports',
-    sourceSlug: 'ndma',
+    sourceUrl: PT_2022,
+    sourceSlug: 'pamir-times',
   },
   {
     title: 'Bagrote Valley catastrophic flash flood, Gilgit District',
@@ -75,7 +89,7 @@ const EVENTS: EventSeed[] = [
     locationName: 'Bagrote Valley',
     affectedCount: 1400,
     reportedAt: '2022-08-25',
-    sourceUrl: 'https://reliefweb.int/disasters/fl-2022-000332-pak',
+    sourceUrl: RW_2022,
     sourceSlug: 'reliefweb',
   },
   {
@@ -88,8 +102,8 @@ const EVENTS: EventSeed[] = [
     locationName: 'Phander, Ghakuch, Ghizer Valley',
     affectedCount: 2100,
     reportedAt: '2022-08-20',
-    sourceUrl: 'https://ndma.gov.pk/disaster-reports',
-    sourceSlug: 'ndma',
+    sourceUrl: PT_2022,
+    sourceSlug: 'pamir-times',
   },
   {
     title: 'Diamer district multi-valley flash floods and road blockages',
@@ -101,7 +115,7 @@ const EVENTS: EventSeed[] = [
     locationName: 'Chilas, Darel, Tangir, Harban',
     affectedCount: 3500,
     reportedAt: '2022-08-14',
-    sourceUrl: 'https://reliefweb.int/disasters/fl-2022-000332-pak',
+    sourceUrl: RW_2022,
     sourceSlug: 'reliefweb',
   },
   {
@@ -114,8 +128,8 @@ const EVENTS: EventSeed[] = [
     locationName: 'Skardu city, Satpara Road',
     affectedCount: 900,
     reportedAt: '2022-08-22',
-    sourceUrl: 'https://ndma.gov.pk/disaster-reports',
-    sourceSlug: 'ndma',
+    sourceUrl: PT_2022,
+    sourceSlug: 'pamir-times',
   },
   {
     title: 'Ghanche district cloud burst and flash flood',
@@ -127,8 +141,8 @@ const EVENTS: EventSeed[] = [
     locationName: 'Khaplu Valley, Ghanche',
     affectedCount: 3600,
     reportedAt: '2022-08-10',
-    sourceUrl: 'https://ndma.gov.pk/disaster-reports',
-    sourceSlug: 'ndma',
+    sourceUrl: PT_2022,
+    sourceSlug: 'pamir-times',
   },
   {
     title: 'Astore River flash flood damages Astore town',
@@ -140,8 +154,8 @@ const EVENTS: EventSeed[] = [
     locationName: 'Astore Town, Astore Valley',
     affectedCount: 1100,
     reportedAt: '2022-07-30',
-    sourceUrl: 'https://ndma.gov.pk/disaster-reports',
-    sourceSlug: 'ndma',
+    sourceUrl: RW_2022,
+    sourceSlug: 'reliefweb',
   },
   {
     title: 'Nagar Hoper Glacier GLOF, upper Nagar Valley',
@@ -153,7 +167,7 @@ const EVENTS: EventSeed[] = [
     locationName: 'Hoper Valley, Nagar',
     affectedCount: 800,
     reportedAt: '2022-07-12',
-    sourceUrl: 'https://www.icimod.org/article/glacial-lake-outburst-floods-in-the-hunza-valley',
+    sourceUrl: ICIMOD_GLOF,
     sourceSlug: 'icimod',
   },
 
@@ -168,8 +182,8 @@ const EVENTS: EventSeed[] = [
     locationName: 'Hoper/Hopar Valley, Nagar District',
     affectedCount: 600,
     reportedAt: '2023-07-18',
-    sourceUrl: 'https://reliefweb.int/country/pak',
-    sourceSlug: 'reliefweb',
+    sourceUrl: ICIMOD_GLOF,
+    sourceSlug: 'icimod',
   },
   {
     title: 'Hunza KKH landslide blocks highway near Attabad',
@@ -181,7 +195,7 @@ const EVENTS: EventSeed[] = [
     locationName: 'Attabad Lake, KKH, Hunza-Nagar',
     affectedCount: null,
     reportedAt: '2023-01-14',
-    sourceUrl: 'https://www.pamirtimes.net',
+    sourceUrl: PT_ATTABAD_2023,
     sourceSlug: 'pamir-times',
   },
   {
@@ -194,8 +208,8 @@ const EVENTS: EventSeed[] = [
     locationName: 'Shigar Valley, Shigar District',
     affectedCount: 1800,
     reportedAt: '2023-07-25',
-    sourceUrl: 'https://ndma.gov.pk/disaster-reports',
-    sourceSlug: 'ndma',
+    sourceUrl: RW_PAK,
+    sourceSlug: 'reliefweb',
   },
   {
     title: 'Shishper Glacier GLOF season resumes, Hunza',
@@ -207,7 +221,7 @@ const EVENTS: EventSeed[] = [
     locationName: 'Hassanabad, Shishper Glacier, Hunza',
     affectedCount: 500,
     reportedAt: '2023-06-05',
-    sourceUrl: 'https://www.icimod.org/article/glacial-lake-outburst-floods-in-the-hunza-valley',
+    sourceUrl: ICIMOD_GLOF,
     sourceSlug: 'icimod',
   },
   {
@@ -220,8 +234,8 @@ const EVENTS: EventSeed[] = [
     locationName: 'Astore, Gudai, Minimerg',
     affectedCount: 2200,
     reportedAt: '2023-09-08',
-    sourceUrl: 'https://ndma.gov.pk/disaster-reports',
-    sourceSlug: 'ndma',
+    sourceUrl: RW_PAK,
+    sourceSlug: 'reliefweb',
   },
 
   // ─── 2021 ─────────────────────────────────────────────────────────────────────
@@ -235,8 +249,8 @@ const EVENTS: EventSeed[] = [
     locationName: 'Darel and Tangir Valleys, Diamer',
     affectedCount: 1500,
     reportedAt: '2021-08-06',
-    sourceUrl: 'https://ndma.gov.pk/disaster-reports',
-    sourceSlug: 'ndma',
+    sourceUrl: RW_2021,
+    sourceSlug: 'reliefweb',
   },
   {
     title: 'Astore River bridges and road damaged in flash flood',
@@ -248,8 +262,8 @@ const EVENTS: EventSeed[] = [
     locationName: 'Astore Town',
     affectedCount: 700,
     reportedAt: '2021-07-22',
-    sourceUrl: 'https://ndma.gov.pk/disaster-reports',
-    sourceSlug: 'ndma',
+    sourceUrl: RW_2021,
+    sourceSlug: 'reliefweb',
   },
 
   // ─── 2024 ─────────────────────────────────────────────────────────────────────
@@ -263,8 +277,8 @@ const EVENTS: EventSeed[] = [
     locationName: 'Passu, Gulmit, Gojal Valley, Upper Hunza',
     affectedCount: 1200,
     reportedAt: '2024-07-03',
-    sourceUrl: 'https://ndma.gov.pk/disaster-reports',
-    sourceSlug: 'ndma',
+    sourceUrl: RW_PAK,
+    sourceSlug: 'reliefweb',
   },
   {
     title: 'Kharmang Valley flash flood, multiple bridge failures',
@@ -276,8 +290,8 @@ const EVENTS: EventSeed[] = [
     locationName: 'Kharmang Valley, Shyok River',
     affectedCount: 2500,
     reportedAt: '2024-08-02',
-    sourceUrl: 'https://ndma.gov.pk/disaster-reports',
-    sourceSlug: 'ndma',
+    sourceUrl: RW_PAK,
+    sourceSlug: 'reliefweb',
   },
   {
     title: 'Diamer flash flood destroys Chilas bazaar shops',
@@ -302,8 +316,8 @@ const EVENTS: EventSeed[] = [
     locationName: 'Ishkoman Valley, Ghizer District',
     affectedCount: 900,
     reportedAt: '2024-07-15',
-    sourceUrl: 'https://ndma.gov.pk/disaster-reports',
-    sourceSlug: 'ndma',
+    sourceUrl: RW_PAK,
+    sourceSlug: 'reliefweb',
   },
   {
     title: 'Astore Deosai landslide blocks road, hikers stranded',
@@ -338,10 +352,8 @@ async function main() {
   let skipped = 0;
 
   for (const e of EVENTS) {
-    // Skip if source_url already exists
-    const exists = await db.execute(
-      sql`SELECT 1 FROM events WHERE source_url = ${e.sourceUrl} AND title = ${e.title} LIMIT 1`,
-    );
+    // Dedup by title only — source URLs may have been updated by fix-source-urls script
+    const exists = await db.execute(sql`SELECT 1 FROM events WHERE title = ${e.title} LIMIT 1`);
     if (exists.rows.length > 0) {
       skipped++;
       continue;

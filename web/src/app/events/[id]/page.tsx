@@ -103,16 +103,22 @@ export default async function EventDetailPage({ params }: Props) {
         </div>
       )}
 
-      {/* Source link — only render for http/https to prevent javascript: URI injection */}
+      {/* Source attribution — only render for http/https to prevent javascript: URI injection */}
       {event.sourceUrl && /^https?:\/\//i.test(event.sourceUrl) && (
-        <div className="mb-6">
+        <div className="mb-6 rounded-xl border border-slate-200 bg-white px-4 py-3">
+          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400">
+            Source
+          </p>
+          {event.sourceName && (
+            <p className="mb-2 text-sm font-medium text-slate-700">{event.sourceName}</p>
+          )}
           <a
             href={event.sourceUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+            className="inline-flex items-center gap-1.5 text-sm text-teal-700 hover:underline"
           >
-            View original source ↗
+            {event.sourceUrl.length > 70 ? event.sourceUrl.slice(0, 67) + '…' : event.sourceUrl} ↗
           </a>
         </div>
       )}

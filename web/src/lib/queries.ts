@@ -25,6 +25,11 @@ export type EventRow = {
   latitude: number | null;
 };
 
+export type EventDetailRow = EventRow & {
+  sourceName: string | null;
+  sourceSlug: string | null;
+};
+
 const eventSelect = {
   id: events.id,
   title: events.title,
@@ -86,13 +91,18 @@ export async function getEvents(filters?: EventFilters, limit?: number): Promise
   return query as Promise<EventRow[]>;
 }
 
-export async function getEventById(id: number): Promise<EventRow | null> {
-  const [row] = await (db
-    .select(eventSelect)
+export async function getEventById(id: number): Promise<EventDetailRow | null> {
+  const [row] = await db
+    .select({
+      ...eventSelect,
+      sourceName: sources.name,
+      sourceSlug: sources.slug,
+    })
     .from(events)
+    .leftJoin(sources, eq(events.sourceId, sources.id))
     .where(eq(events.id, id))
-    .limit(1) as Promise<EventRow[]>);
-  return row ?? null;
+    .limit(1);
+  return (row ?? null) as EventDetailRow | null;
 }
 
 export async function getActiveAlerts(limit = 10) {
