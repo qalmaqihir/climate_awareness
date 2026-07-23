@@ -35,7 +35,7 @@ CREATE TABLE "events" (
 	"event_type" text NOT NULL,
 	"severity" text DEFAULT 'moderate' NOT NULL,
 	"status" text DEFAULT 'unverified' NOT NULL,
-	"location" "geography(Point, 4326)",
+	"location" geography(Point, 4326),
 	"location_name" text,
 	"district" text,
 	"source_id" integer,
