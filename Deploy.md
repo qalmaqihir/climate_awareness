@@ -325,6 +325,8 @@ docker compose logs -f web
 
 This phase adds the pgvector extension to postgres and the `/ask` AI page.
 
+**SSH:** `ssh qalmaq@100.90.23.36`
+
 **1. Add new env vars to root `.env`** (one file, shared by all services via docker-compose):
 
 ```bash
@@ -339,6 +341,8 @@ OPENROUTER_API_KEY=<your key from openrouter.ai>
 JINA_API_KEY=<your key from jina.ai>
 # Optional — default is 20 queries/IP/day
 # AGENT_RATE_LIMIT=20
+# Bot IP blocking — comma-separated, populate when attackers detected
+BLOCKED_IPS=
 ```
 
 **2. Rebuild postgres** (adds pgvector package on top of the PostGIS image):
@@ -346,41 +350,145 @@ JINA_API_KEY=<your key from jina.ai>
 ```bash
 docker compose build postgres
 docker compose up -d postgres
-# Wait for healthy
 docker compose ps
+# Wait until postgres shows (healthy)
 ```
 
 **3. Apply migration 0002** (query_logs table + embedding_v1 column):
 
 ```bash
+docker compose --profile tools build tools
 docker compose --profile tools run --rm tools pnpm db:migrate
 ```
 
 Expected: `Migrations complete.`
 
-Verify vector column exists:
+**CRITICAL — verify vector column exists:**
 
 ```bash
 docker compose exec postgres psql -U climate_gb -d climate_gb \
   -c "\d events" | grep embedding
-# Should show: embedding_v1 | vector(1024)
+# Must show: embedding_v1 | vector(1024)
 ```
 
-**4. Rebuild web + worker** (picks up new env vars and code):
+> **Known issue:** Drizzle's `statement-breakpoint` runs each SQL statement separately. If the `vector` extension
+> was not enabled in the DB when migration ran, the `ALTER TABLE events ADD COLUMN embedding_v1 vector(1024)`
+> statement fails silently while `CREATE TABLE query_logs` succeeds. Drizzle marks the migration as complete
+> anyway. If `grep embedding` returns nothing, apply the fix manually:
+>
+> ```bash
+> # Use -c flags (not heredoc — heredoc fails in non-TTY SSH sessions)
+> docker compose exec postgres psql -U climate_gb -d climate_gb \
+>   -c "CREATE EXTENSION IF NOT EXISTS vector;"
+>
+> docker compose exec postgres psql -U climate_gb -d climate_gb \
+>   -c "ALTER TABLE events ADD COLUMN IF NOT EXISTS embedding_v1 vector(1024);"
+>
+> # Verify again
+> docker compose exec postgres psql -U climate_gb -d climate_gb \
+>   -c "\d events" | grep embedding
+> # Should now show: embedding_v1 | vector(1024)
+> ```
+
+**4. Re-seed sources** (adds GDACS + ReliefWeb rows):
+
+```bash
+docker compose --profile tools run --rm tools pnpm db:seed
+# Safe to re-run — onConflictDoNothing skips existing rows
+```
+
+**5. Seed verified historical events** (required for RAG to return answers):
+
+> Without this step, the `events` table is empty and the RAG agent always responds with
+> "no matching data". The `alerts` table (live feed) is separate from `events` (curated RAG corpus).
+
+```bash
+docker compose --profile tools run --rm tools pnpm db:seed-events
+# Inserts ~22 real documented GB GLOF/flood/landslide events (2020-2024)
+# Safe to re-run — skips rows where title + source_url already exist
+```
+
+Verify events were inserted:
+
+```bash
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "SELECT COUNT(*) FROM events WHERE status = 'verified';"
+# Should show: count = 22 (or more if you added extras)
+```
+
+**6. Rebuild web + worker** (picks up new env vars and code):
+
+> If the web container shows `CACHED [web builder 6/6]` but code changes are not reflected
+> (stale Docker cache), force a full rebuild:
+>
+> ```bash
+> docker compose build --no-cache web
+> ```
 
 ```bash
 docker compose --profile app up -d --build web worker
 ```
 
-**5. Check worker is embedding events:**
+**7. Check worker is embedding events:**
 
 ```bash
-docker compose logs worker | grep embed
-# After ~15 min: "[embed] Batch 1: 10 events embedded"
-# If no JINA_API_KEY: "[embed] JINA_API_KEY not set — skipping embedding job"
+docker compose logs -f worker 2>&1 | grep -E "embed|Jina|error"
+# On startup: "[cron] Triggering embedding job"
+# Then: "[embed] Found N unindexed events"
+# ~1 min later: "[embed] Done" — all events now have embeddings
 ```
 
-Once events are embedded, `/ask` returns grounded answers with citations.
+Worker embeds on startup and every 15 minutes. Once `embedding_v1` is populated, `/ask` returns grounded answers with citations.
+
+**8. Clean up non-disaster alerts (if any junk crept in):**
+
+> Old scraper versions may have inserted general news articles. Run this SQL to delete them:
+
+```bash
+docker compose exec postgres psql -U climate_gb -d climate_gb -c "
+DELETE FROM alerts
+WHERE source_id = (SELECT id FROM sources WHERE slug = 'pamir-times')
+AND NOT (
+  lower(title) LIKE '%flood%' OR lower(title) LIKE '%glof%' OR
+  lower(title) LIKE '%landslide%' OR lower(title) LIKE '%disaster%' OR
+  lower(title) LIKE '%emergency%' OR lower(title) LIKE '%rain%' OR
+  lower(title) LIKE '%monsoon%' OR lower(title) LIKE '%warning%' OR
+  lower(body) LIKE '%flood%' OR lower(body) LIKE '%glof%' OR
+  lower(body) LIKE '%landslide%' OR lower(body) LIKE '%disaster%'
+);
+"
+# Returns: DELETE N — shows how many non-disaster articles removed
+```
+
+**9. NPM Basic Auth — must be disabled:**
+
+NPM's "Access Lists" feature applies HTTP Basic Auth before Cloudflare/app sees the request.
+If all pages return HTTP 401, go to NPM admin (`http://<VPS_IP>:81`) →
+Proxy Hosts → `climate-gb.qalmaq.cloud` → Edit → Access List = None → Save.
+
+**10. Smoke tests:**
+
+```bash
+# Home page
+curl -I https://climate-gb.qalmaq.cloud/
+# → HTTP/2 200
+
+# Anti-bot header
+curl -sI https://climate-gb.qalmaq.cloud/ | grep -i "x-robots"
+# → X-Robots-Tag: noai
+
+# New pages
+curl -I https://climate-gb.qalmaq.cloud/contact
+curl -I https://climate-gb.qalmaq.cloud/volunteer
+curl -I https://climate-gb.qalmaq.cloud/ask
+
+# RAG agent SSE stream
+curl -N -X POST https://climate-gb.qalmaq.cloud/api/agent/query \
+  -H "Content-Type: application/json" \
+  -d '{"query":"Which districts had the most GLOF events?"}' \
+  --max-time 60
+# Should stream: data: {"type":"token",...} lines, then data: {"type":"done",...}
+```
 
 ---
 
@@ -527,4 +635,87 @@ If this error reappears after adding new imports to `middleware.ts`, check that 
 
 ```bash
 docker compose --profile tools build tools
+```
+
+---
+
+### `column "embedding_v1" does not exist` in worker logs after migration
+
+**Cause**: Drizzle's migration ran the `CREATE TABLE query_logs` statement successfully but the `ALTER TABLE events ADD COLUMN embedding_v1 vector(1024)` statement failed silently because the `vector` extension was not yet activated in the database. Drizzle marked the whole migration as complete despite the partial failure.
+
+**Fix** — manually apply the two missing steps using `-c` flags (never use heredoc `<<` in SSH sessions — it fails with "the input device is not a TTY"):
+
+```bash
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "ALTER TABLE events ADD COLUMN IF NOT EXISTS embedding_v1 vector(1024);"
+
+# Verify
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "\d events" | grep embedding
+# Must show: embedding_v1 | vector(1024)
+```
+
+Then restart worker: `docker compose restart worker`
+
+---
+
+### RAG agent responds "no matching data" for all queries
+
+**Cause**: The `events` table (RAG corpus) is empty. The `alerts` table (live feed) is a separate table and is NOT searched by the RAG pipeline.
+
+**Fix**: Seed verified historical events, then wait for worker to embed them:
+
+```bash
+docker compose --profile tools build tools
+docker compose --profile tools run --rm tools pnpm db:seed-events
+docker compose restart worker
+docker compose logs -f worker 2>&1 | grep embed
+# Wait for "[embed] Done" — takes ~1 min for first batch
+```
+
+---
+
+### LangGraph build error: `blocked is already being used as a state attribute`
+
+**Cause**: LangGraph forbids a node name that matches a state annotation field name. The graph state has `blocked: Annotation<boolean>` — a node also named `'blocked'` causes a conflict at graph compile time, which surfaces as a Next.js build error when the route module is collected.
+
+**Fix**: Already patched — node renamed from `'blocked'` to `'blockQuery'` in `web/src/lib/agent/graph.ts`. If this reappears after editing the graph, ensure no node name matches any key in `AgentState`.
+
+---
+
+### Docker web build uses stale cache, ignores code changes
+
+**Cause**: Docker BuildKit caches each layer by content hash. If `git pull` fetched new code but `docker compose up --build` still shows `CACHED [web builder 5/6] COPY . .`, the cache was not properly invalidated.
+
+**Fix**: Force a full rebuild without cache:
+
+```bash
+docker compose build --no-cache web
+docker compose --profile app up -d web
+```
+
+---
+
+### Alert page shows general news instead of disaster alerts
+
+**Cause**: Old scraper runs (before DISASTER_KEYWORDS filter was added) inserted general Pamir Times articles into the `alerts` table. The current scraper correctly filters, but already-inserted rows remain.
+
+**Fix**: Delete non-disaster alerts from DB:
+
+```bash
+docker compose exec postgres psql -U climate_gb -d climate_gb -c "
+DELETE FROM alerts
+WHERE source_id = (SELECT id FROM sources WHERE slug = 'pamir-times')
+AND NOT (
+  lower(title) LIKE '%flood%' OR lower(title) LIKE '%glof%' OR
+  lower(title) LIKE '%landslide%' OR lower(title) LIKE '%disaster%' OR
+  lower(title) LIKE '%emergency%' OR lower(title) LIKE '%rain%' OR
+  lower(title) LIKE '%monsoon%' OR lower(title) LIKE '%warning%' OR
+  lower(body) LIKE '%flood%' OR lower(body) LIKE '%glof%' OR
+  lower(body) LIKE '%landslide%' OR lower(body) LIKE '%disaster%'
+);
+"
 ```
