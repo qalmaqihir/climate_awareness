@@ -299,12 +299,12 @@ export default function NewEventPage() {
           </Field>
 
           {form.embedHtml && (
-            <Field label="Embed HTML">
+            <Field label="Embed HTML (read-only — set via oEmbed fetch above)">
               <textarea
                 rows={4}
                 value={form.embedHtml}
-                onChange={set('embedHtml')}
-                className={`${inputClass} font-mono text-xs`}
+                readOnly
+                className={`${inputClass} cursor-default bg-slate-50 font-mono text-xs`}
               />
             </Field>
           )}

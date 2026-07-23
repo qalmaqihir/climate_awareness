@@ -8,16 +8,26 @@ export async function GET(req: NextRequest) {
 
   const types = searchParams.get('type')?.split(',').filter(Boolean);
   const districts = searchParams.get('district')?.split(',').filter(Boolean);
-  const from = searchParams.get('from') ? new Date(searchParams.get('from')!) : undefined;
-  const to = searchParams.get('to') ? new Date(searchParams.get('to')!) : undefined;
+
+  const fromRaw = searchParams.get('from');
+  const toRaw = searchParams.get('to');
+  const from = fromRaw ? new Date(fromRaw) : undefined;
+  const to = toRaw ? new Date(toRaw) : undefined;
+
+  if (from && isNaN(from.getTime())) {
+    return NextResponse.json({ error: 'Invalid from date' }, { status: 400 });
+  }
+  if (to && isNaN(to.getTime())) {
+    return NextResponse.json({ error: 'Invalid to date' }, { status: 400 });
+  }
 
   let rows;
   try {
-    rows = await getEvents({ types, districts, from, to, status: 'verified' });
+    rows = await getEvents({ types, districts, from, to, status: 'verified' }, 2000);
   } catch {
     return NextResponse.json(
-      { type: 'FeatureCollection', features: [] },
-      { status: 200, headers: { 'Access-Control-Allow-Origin': '*' } },
+      { error: 'Service temporarily unavailable' },
+      { status: 503, headers: { 'Access-Control-Allow-Origin': '*' } },
     );
   }
 

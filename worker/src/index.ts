@@ -32,9 +32,11 @@ await Promise.all([
 
 console.log('[worker] Ready. Waiting for scheduled triggers.');
 
-// Keep process alive
-process.on('SIGTERM', async () => {
-  console.log('[worker] SIGTERM received, shutting down');
+// Keep process alive — handle both SIGTERM (Docker stop) and SIGINT (Ctrl-C / dev).
+async function shutdown(signal: string) {
+  console.log(`[worker] ${signal} received, shutting down`);
   await pool.end();
   process.exit(0);
-});
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

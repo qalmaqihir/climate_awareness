@@ -56,7 +56,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
 });
 
-// Extend next-auth types
+// Extend next-auth types — all in one block to avoid duplicate module declarations.
 declare module 'next-auth' {
   interface User {
     isAdmin?: boolean;
@@ -66,9 +66,9 @@ declare module 'next-auth' {
       isAdmin?: boolean;
     } & import('next-auth').DefaultSession['user'];
   }
-}
-
-declare module 'next-auth' {
+  // JWT is technically in next-auth/jwt but TypeScript bundler mode can't augment
+  // subpath exports that re-export from @auth/core. Declaring here is a workaround
+  // that gives jwt callback type-safety without a compile error.
   interface JWT {
     isAdmin?: boolean;
   }

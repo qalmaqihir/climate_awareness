@@ -55,7 +55,7 @@ export interface EventFilters {
   status?: string;
 }
 
-export async function getEvents(filters?: EventFilters): Promise<EventRow[]> {
+export async function getEvents(filters?: EventFilters, limit?: number): Promise<EventRow[]> {
   const conditions = [];
 
   if (filters?.status) {
@@ -74,11 +74,16 @@ export async function getEvents(filters?: EventFilters): Promise<EventRow[]> {
     conditions.push(lte(events.reportedAt, filters.to));
   }
 
-  return db
+  const query = db
     .select(eventSelect)
     .from(events)
     .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(events.reportedAt)) as Promise<EventRow[]>;
+    .orderBy(desc(events.reportedAt));
+
+  if (limit !== undefined) {
+    return query.limit(limit) as Promise<EventRow[]>;
+  }
+  return query as Promise<EventRow[]>;
 }
 
 export async function getEventById(id: number): Promise<EventRow | null> {

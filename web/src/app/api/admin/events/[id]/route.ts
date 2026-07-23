@@ -5,31 +5,35 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { events } from '@/lib/schema';
 
-const patchSchema = z.object({
-  title: z.string().min(3).max(300).optional(),
-  description: z.string().optional(),
-  eventType: z
-    .enum([
-      'glof',
-      'flood',
-      'landslide',
-      'infrastructure_damage',
-      'casualty',
-      'displacement',
-      'other',
-    ])
-    .optional(),
-  severity: z.enum(['low', 'moderate', 'high', 'critical']).optional(),
-  status: z.enum(['verified', 'unverified', 'disputed', 'archived']).optional(),
-  district: z.string().optional(),
-  locationName: z.string().optional(),
-  latitude: z.number().min(-90).max(90).optional(),
-  longitude: z.number().min(-180).max(180).optional(),
-  sourceUrl: z.string().url().optional(),
-  embedHtml: z.string().optional(),
-  affectedCount: z.number().int().min(0).optional(),
-  reportedAt: z.string().datetime().optional(),
-});
+const patchSchema = z
+  .object({
+    title: z.string().min(3).max(300).optional(),
+    description: z.string().optional(),
+    eventType: z
+      .enum([
+        'glof',
+        'flood',
+        'landslide',
+        'infrastructure_damage',
+        'casualty',
+        'displacement',
+        'other',
+      ])
+      .optional(),
+    severity: z.enum(['low', 'moderate', 'high', 'critical']).optional(),
+    status: z.enum(['verified', 'unverified', 'disputed', 'archived']).optional(),
+    district: z.string().optional(),
+    locationName: z.string().optional(),
+    latitude: z.number().min(-90).max(90).optional(),
+    longitude: z.number().min(-180).max(180).optional(),
+    sourceUrl: z.string().url().optional(),
+    embedHtml: z.string().optional(),
+    affectedCount: z.number().int().min(0).optional(),
+    reportedAt: z.string().datetime().optional(),
+  })
+  .refine((d) => (d.latitude == null) === (d.longitude == null), {
+    message: 'Provide both latitude and longitude, or neither',
+  });
 
 async function requireAdmin() {
   const session = await auth();
@@ -58,7 +62,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const locationWkt =
     d.latitude != null && d.longitude != null ? `POINT(${d.longitude} ${d.latitude})` : undefined;
 
-  await db
+  const updated = await db
     .update(events)
     .set({
       ...(d.title !== undefined && { title: d.title }),
@@ -75,7 +79,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...(d.reportedAt !== undefined && { reportedAt: new Date(d.reportedAt) }),
       updatedAt: new Date(),
     })
-    .where(eq(events.id, eventId));
+    .where(eq(events.id, eventId))
+    .returning({ id: events.id });
+
+  if (updated.length === 0) {
+    return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+  }
 
   return NextResponse.json({ ok: true });
 }
@@ -92,10 +101,15 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
   }
 
-  await db
+  const deleted = await db
     .update(events)
     .set({ status: 'archived', updatedAt: new Date() })
-    .where(eq(events.id, eventId));
+    .where(eq(events.id, eventId))
+    .returning({ id: events.id });
+
+  if (deleted.length === 0) {
+    return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+  }
 
   return NextResponse.json({ ok: true });
 }

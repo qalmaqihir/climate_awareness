@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { auth } from '@/lib/auth';
+import { auth, signOut } from '@/lib/auth';
 
 const NAV = [
   { label: 'Dashboard', href: '/admin' },
@@ -39,12 +39,19 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </nav>
 
         <div className="absolute bottom-4 left-0 w-56 px-4">
-          <Link
-            href="/api/auth/signout"
-            className="block rounded-lg px-3 py-2 text-xs text-slate-500 hover:text-slate-300"
+          <form
+            action={async () => {
+              'use server';
+              await signOut({ redirectTo: '/admin/login' });
+            }}
           >
-            Sign out
-          </Link>
+            <button
+              type="submit"
+              className="block w-full rounded-lg px-3 py-2 text-left text-xs text-slate-500 hover:text-slate-300"
+            >
+              Sign out
+            </button>
+          </form>
         </div>
       </aside>
 

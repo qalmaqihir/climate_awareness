@@ -5,17 +5,22 @@
 # ─── deps ────────────────────────────────────────────────────────────────
 FROM node:22-alpine AS deps
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@11.15.1 --activate
-ENV NPM_CONFIG_FETCH_TIMEOUT=600000
-ENV NPM_CONFIG_FETCH_RETRIES=5
+# Use npm to install pnpm — avoids corepack network calls that timeout in CI/VPS.
+RUN npm install -g pnpm@11.15.1 --prefer-offline || npm install -g pnpm@11.15.1
+ENV PNPM_HOME=/root/.local/share/pnpm
+ENV PATH=$PNPM_HOME:$PATH
 COPY package.json pnpm-lock.yaml .npmrc pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile --prod=false
 
 # ─── builder ─────────────────────────────────────────────────────────────
 FROM node:22-alpine AS builder
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@11.15.1 --activate
+RUN npm install -g pnpm@11.15.1 --prefer-offline || npm install -g pnpm@11.15.1
 ENV NEXT_TELEMETRY_DISABLED=1
+# Placeholder values so Next.js SSG does not hang waiting for a real DB.
+# Real values are injected at container start via docker-compose / env file.
+ENV DATABASE_URL=postgresql://build-placeholder:x@localhost:5432/none
+ENV AUTH_SECRET=build-placeholder-replace-at-runtime
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN pnpm build
