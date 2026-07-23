@@ -30,11 +30,11 @@ export default async function HomePage() {
     const [s, alerts, events] = await Promise.all([
       getEventStats(),
       getActiveAlerts(20),
-      getEvents({ status: 'verified' }),
+      getEvents({ status: 'verified' }, 3),
     ]);
     stats = s;
     alertCount = alerts.length;
-    recentEvents = events.slice(0, 3);
+    recentEvents = events;
   } catch {
     // DB offline — show zeros
   }

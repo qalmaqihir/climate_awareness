@@ -9,7 +9,7 @@ export default async function AdminEventsPage() {
   let events: Awaited<ReturnType<typeof getEvents>> = [];
 
   try {
-    events = await getEvents();
+    events = await getEvents(undefined, 500);
   } catch {
     // DB not yet available
   }

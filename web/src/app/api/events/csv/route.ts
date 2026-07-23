@@ -3,20 +3,24 @@ import { getEvents } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
 
+const FORMULA_TRIGGER = /^[=+\-@\t\r]/;
+
 function escapeCsv(value: string | number | null | undefined): string {
   if (value === null || value === undefined) return '';
   const str = String(value);
-  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-    return `"${str.replace(/"/g, '""')}"`;
+  // Prefix formula-trigger characters to prevent CSV injection in Excel / LibreOffice
+  const safe = FORMULA_TRIGGER.test(str) ? `\t${str}` : str;
+  if (safe.includes(',') || safe.includes('"') || safe.includes('\n')) {
+    return `"${safe.replace(/"/g, '""')}"`;
   }
-  return str;
+  return safe;
 }
 
 export async function GET() {
   let events: Awaited<ReturnType<typeof getEvents>> = [];
 
   try {
-    events = await getEvents({ status: 'verified' });
+    events = await getEvents({ status: 'verified' }, 10_000);
   } catch {
     return NextResponse.json({ error: 'DB offline' }, { status: 503 });
   }
