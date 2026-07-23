@@ -120,6 +120,38 @@ const clusterCountLayer: LayerProps = {
   paint: { 'text-color': '#ffffff' },
 };
 
+// Blur encodes location uncertainty: exact=sharp, approximate=soft, district=blurred.
+const PRECISION_BLUR_EXPR: Expr = [
+  'case',
+  ['==', ['get', 'locationPrecision'], 'exact'],
+  0,
+  ['==', ['get', 'locationPrecision'], 'approximate'],
+  0.35,
+  ['==', ['get', 'locationPrecision'], 'district'],
+  0.85,
+  0.35,
+];
+
+// Opacity reinforces the uncertainty signal.
+const PRECISION_OPACITY_EXPR: Expr = [
+  'case',
+  ['==', ['get', 'locationPrecision'], 'exact'],
+  0.9,
+  ['==', ['get', 'locationPrecision'], 'approximate'],
+  0.78,
+  ['==', ['get', 'locationPrecision'], 'district'],
+  0.6,
+  0.78,
+];
+
+// District-level events get a larger footprint to represent the broader area.
+const PRECISION_RADIUS_BONUS_EXPR: Expr = [
+  'case',
+  ['==', ['get', 'locationPrecision'], 'district'],
+  5,
+  0,
+];
+
 const unclusteredLayer: LayerProps = {
   id: 'events-unclustered',
   type: 'circle',
@@ -127,10 +159,27 @@ const unclusteredLayer: LayerProps = {
   filter: ['!', ['has', 'point_count']],
   paint: {
     'circle-color': TYPE_COLOR_EXPR,
-    'circle-radius': SEVERITY_RADIUS_EXPR,
-    'circle-stroke-width': 2,
+    'circle-radius': ['+', SEVERITY_RADIUS_EXPR, PRECISION_RADIUS_BONUS_EXPR],
+    'circle-stroke-width': ['case', ['==', ['get', 'locationPrecision'], 'exact'], 2.5, 1.5],
     'circle-stroke-color': '#ffffff',
-    'circle-opacity': 0.9,
+    'circle-blur': PRECISION_BLUR_EXPR,
+    'circle-opacity': PRECISION_OPACITY_EXPR,
+  },
+};
+
+// Red ring badge on top of active-state events so active ≠ resolved is never colour-only.
+const activeRingLayer: LayerProps = {
+  id: 'events-active-ring',
+  type: 'circle',
+  source: 'events',
+  filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', 'state'], 'active']],
+  paint: {
+    'circle-radius': ['+', SEVERITY_RADIUS_EXPR, PRECISION_RADIUS_BONUS_EXPR, 5],
+    'circle-color': 'transparent',
+    'circle-stroke-width': 2,
+    'circle-stroke-color': '#dc2626',
+    'circle-opacity': 0,
+    'circle-stroke-opacity': 0.85,
   },
 };
 
@@ -280,7 +329,9 @@ export default function MapView() {
       return;
     }
 
-    const eventFeatures = map.queryRenderedFeatures(e.point, { layers: ['events-unclustered'] });
+    const eventFeatures = map.queryRenderedFeatures(e.point, {
+      layers: ['events-unclustered', 'events-active-ring'],
+    });
     if (eventFeatures.length > 0) {
       const f = eventFeatures[0];
       const coords = (f.geometry as Point).coordinates;
@@ -599,7 +650,7 @@ export default function MapView() {
           style={{ width: '100%', height: '100%' }}
           onClick={handleMapClick}
           cursor="pointer"
-          interactiveLayerIds={['events-clusters', 'events-unclustered']}
+          interactiveLayerIds={['events-clusters', 'events-unclustered', 'events-active-ring']}
         >
           <NavigationControl position="top-right" />
 
@@ -614,6 +665,7 @@ export default function MapView() {
             <Layer {...clusterLayer} />
             <Layer {...clusterCountLayer} />
             <Layer {...unclusteredLayer} />
+            <Layer {...activeRingLayer} />
           </Source>
 
           {popup && (
@@ -705,32 +757,63 @@ export default function MapView() {
                     )}
                 </div>
 
-                <a
-                  href={`/events/${popup.properties.id}`}
-                  className="inline-block rounded bg-teal-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-800"
-                >
-                  View details →
-                </a>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={`/events/${popup.properties.id}`}
+                    className="inline-block rounded bg-teal-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-800"
+                  >
+                    View details →
+                  </a>
+                  {popup.properties.evidenceAvailable && (
+                    <span className="text-[10px] text-teal-700">Source available</span>
+                  )}
+                </div>
               </div>
             </Popup>
           )}
         </Map>
 
         {/* Legend */}
-        <div className="absolute bottom-8 right-3 rounded-xl bg-white/95 px-3 py-2.5 shadow-md ring-1 ring-slate-200">
-          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-            Event type
-          </p>
-          <div className="space-y-1">
-            {ALL_TYPES.map((t) => (
-              <div key={t} className="flex items-center gap-1.5">
-                <span
-                  className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
-                  style={{ backgroundColor: EVENT_TYPE_COLORS[t] }}
-                />
-                <span className="text-[11px] text-slate-700">{EVENT_TYPE_LABELS[t]}</span>
+        <div className="absolute bottom-8 right-3 rounded-xl bg-white/95 px-3 py-2.5 shadow-md ring-1 ring-slate-200 space-y-2.5">
+          <div>
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              Event type
+            </p>
+            <div className="space-y-1">
+              {ALL_TYPES.map((t) => (
+                <div key={t} className="flex items-center gap-1.5">
+                  <span
+                    className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
+                    style={{ backgroundColor: EVENT_TYPE_COLORS[t] }}
+                  />
+                  <span className="text-[11px] text-slate-700">{EVENT_TYPE_LABELS[t]}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              Location precision
+            </p>
+            <div className="space-y-1">
+              {[
+                { key: 'exact', blur: '0', label: 'Exact' },
+                { key: 'approximate', blur: '2px', label: 'Approximate' },
+                { key: 'district', blur: '4px', label: 'District-level' },
+              ].map(({ key, blur, label }) => (
+                <div key={key} className="flex items-center gap-1.5">
+                  <span
+                    className="h-2.5 w-2.5 flex-shrink-0 rounded-full bg-slate-400"
+                    style={{ filter: `blur(${blur})` }}
+                  />
+                  <span className="text-[11px] text-slate-700">{label}</span>
+                </div>
+              ))}
+              <div className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full border-2 border-red-600 bg-transparent" />
+                <span className="text-[11px] text-slate-700">Active event</span>
               </div>
-            ))}
+            </div>
           </div>
         </div>
       </div>
