@@ -253,3 +253,87 @@ docker compose exec postgres dropdb -U climate_gb climate_gb_restore_test
 - [ ] Restore drill completed once.
 
 When all boxes ticked, mark Phase 0 tasks 0.8 – 0.12 ✅ in `plan.md` and start Phase 1.A.
+
+---
+
+## Code deployments (ongoing — run on every push to main)
+
+```bash
+cd /opt/climate-gb
+
+# 1. Pull latest code
+git pull origin main
+
+# 2. Run pending DB migrations
+#    The 'cli' service runs drizzle-kit migrate against the live DB and exits.
+docker compose run --rm cli
+
+# 3. Rebuild and restart app containers (zero-downtime via Docker restart policy)
+docker compose up -d --build web worker
+
+# 4. Verify
+docker compose ps
+docker compose logs web   --tail 30
+docker compose logs worker --tail 30
+```
+
+**Migration notes:**
+
+- `docker compose run --rm cli` runs `drizzle-kit migrate` against `DATABASE_URL`.
+  Never apply `.sql` files by hand — let Drizzle track migration state.
+- If the `cli` service exits non-zero, fix the migration before restarting `web`/`worker`.
+- New indexes (e.g. `0003_steady_black_queen.sql`) are non-destructive — safe to apply
+  on a live DB. Postgres adds them without locking reads.
+
+---
+
+## Environment variables — deployment notes
+
+| Variable             | Source                                                 | Notes                                                                                               |
+| -------------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `POSTGRES_PASSWORD`  | `.env`                                                 | Generated at provision time                                                                         |
+| `NEXTAUTH_SECRET`    | `.env`                                                 | Used by NextAuth for JWT signing                                                                    |
+| `AUTH_SECRET`        | derived in `docker-compose.yml` from `NEXTAUTH_SECRET` | NextAuth v5 reads `AUTH_SECRET`, not `NEXTAUTH_SECRET`; compose maps it — **do not set separately** |
+| `OPENROUTER_API_KEY` | `.env`                                                 | Required for RAG agent                                                                              |
+| `JINA_API_KEY`       | `.env`                                                 | Required for embedding worker                                                                       |
+| `BLOCKED_IPS`        | `.env` (optional)                                      | Comma-separated IPs to permanently block at middleware                                              |
+
+---
+
+## Nginx Proxy Manager — real-IP header (required for IP blocking)
+
+The middleware reads `x-forwarded-for` to enforce `BLOCKED_IPS` and rate limiting.
+Without forwarding the real client IP, all requests appear to come from Cloudflare's
+edge IPs — the block list is effectively disabled.
+
+**This nginx snippet is required, not optional.** Add it to the NPM Advanced tab for
+the proxy host:
+
+```nginx
+# Restore real client IP from Cloudflare
+# Full list: https://www.cloudflare.com/ips-v4 (update when Cloudflare publishes new ranges)
+set_real_ip_from 173.245.48.0/20;
+set_real_ip_from 103.21.244.0/22;
+set_real_ip_from 103.22.200.0/22;
+set_real_ip_from 103.31.4.0/22;
+set_real_ip_from 141.101.64.0/18;
+set_real_ip_from 108.162.192.0/18;
+set_real_ip_from 190.93.240.0/20;
+set_real_ip_from 188.114.96.0/20;
+set_real_ip_from 197.234.240.0/22;
+set_real_ip_from 198.41.128.0/17;
+set_real_ip_from 162.158.0.0/15;
+set_real_ip_from 104.16.0.0/13;
+set_real_ip_from 104.24.0.0/14;
+set_real_ip_from 172.64.0.0/13;
+set_real_ip_from 131.0.72.0/22;
+real_ip_header CF-Connecting-IP;
+
+# Bypass cache for admin + api routes
+location ~ ^/(admin|api)/ {
+  add_header Cache-Control "no-store";
+}
+```
+
+Without this, `BLOCKED_IPS` in `.env` blocks Cloudflare's own IPs and breaks the site
+for all visitors.

@@ -1,8 +1,10 @@
-# Climate Awareness GB — Implementation Plan
+# Northern Pakistan Climate Watch — Implementation Plan
+
+_(formerly "Climate Awareness GB" — scope expanded to GB + Chitral on 2026-07-23)_
 
 **Companion to:** `idea.md`
 **Last updated:** 2026-07-23
-**Current phase:** Phase 1.H (TBD — post-deploy, pre-Phase 2)
+**Current phase:** Phase 2.A (VPS fixes pending) → 2.B (Telegram bot) → 2.E (Chitral data expansion) next
 **Resume rule:** Always read this file top-to-bottom before resuming work. Update the **Status** column of every task as you go.
 
 ---
@@ -345,32 +347,56 @@ P2 deferred: weatherSnapshots lat/lng as text (needs migration), DOMPurify for o
 
 ## 2.A — AI agent (RAG over events + alerts)
 
-| #     | Task                                                                                           | Status | Notes                                                                                                                      |
-| ----- | ---------------------------------------------------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------- |
-| 2.A.1 | Add `pgvector` extension to self-hosted Postgres container                                     | ⬜     | Use `pgvector/pgvector:pg16` image or add extension init SQL. Reserve if switching image mid-project needs data migration. |
-| 2.A.2 | Embed events + alerts on insert (Voyage or OpenAI embeddings)                                  | ⬜     | Batch backfill existing                                                                                                    |
-| 2.A.3 | `/api/agent/query` endpoint: retrieve top-k via pgvector, prompt Claude, return with citations | ⬜     | Use Anthropic SDK, enable prompt caching                                                                                   |
-| 2.A.4 | `/ask` page: chat UI, streaming responses, cited sources with links                            | ⬜     |                                                                                                                            |
-| 2.A.5 | Guardrails: refuse political questions, redirect to sources, no medical/legal advice           | ⬜     | System prompt                                                                                                              |
-| 2.A.6 | Rate limit: 20 queries/day per IP — use self-hosted Redis already in stack                     | ⬜     |                                                                                                                            |
-| 2.A.7 | Log queries for offline improvement (no PII stored)                                            | ⬜     |                                                                                                                            |
+| #     | Task                                                                              | Status | Notes                                                                                                                                                                                                                                                                                    |
+| ----- | --------------------------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2.A.1 | Add `pgvector` extension to self-hosted Postgres container                        | ✅     | `pgvector/pgvector:pg16` image in docker-compose. `db/init/00-extensions.sql` enables it. VPS: must also run `CREATE EXTENSION IF NOT EXISTS vector;` manually (see Deploy.md).                                                                                                          |
+| 2.A.2 | Embed events on insert via worker cron (Jina AI `jina-embeddings-v3`, 1024-dim)   | 🟨     | `worker/src/jobs/embed-events.ts` built. `embedding_v1 vector(1024)` column added in migration 0002. **VPS BLOCKER:** column missing — pgvector was not loaded when migration ran. Manual fix: `ALTER TABLE events ADD COLUMN IF NOT EXISTS embedding_v1 vector(1024);` (see Deploy.md). |
+| 2.A.3 | `/api/agent/query` SSE endpoint: LangGraph RAG pipeline with hybrid RRF retrieval | ✅     | `web/src/lib/agent/graph.ts` — guardrails → retrieve → generate. Hybrid pgvector + FTS. Node name conflict fix: `'blocked'` → `'blockQuery'`. OpenRouter fallback chain.                                                                                                                 |
+| 2.A.4 | `/ask` page: chat UI, streaming SSE responses, cited sources with links           | ✅     | `web/src/app/ask/page.tsx`. Real-time token stream via `ReadableStream`.                                                                                                                                                                                                                 |
+| 2.A.5 | Guardrails: refuse off-topic, political, medical/legal questions                  | ✅     | `web/src/lib/agent/guardrails.ts` — keyword + pattern check, no LLM cost.                                                                                                                                                                                                                |
+| 2.A.6 | Rate limit: 20 queries/day per IP via Redis                                       | ⬜     | Redis already in stack. Not yet implemented.                                                                                                                                                                                                                                             |
+| 2.A.7 | Log queries for offline improvement (`query_logs` table, no PII)                  | ✅     | Schema + Drizzle model added. Migration committed.                                                                                                                                                                                                                                       |
+| 2.A.8 | Seed 22 verified GB events (2020–2024) for RAG corpus                             | ✅     | `web/scripts/seed-events.ts` — 22 real GLOF/flood/landslide events across 9 districts. `pnpm db:seed-events`. **VPS: not yet run** (depends on 2.A.2 fix).                                                                                                                               |
+| 2.A.9 | VPS: run `--no-cache` web rebuild after graph.ts node fix                         | 🟨     | `docker compose build --no-cache web`. Blocked on user running VPS commands.                                                                                                                                                                                                             |
 
-**Verification:** 10 test queries return grounded answers with correct citations.
-**Commit:** `feat: RAG-based AI agent with source citations`
+**VPS remaining sequence (must run in order):**
 
-## 2.B — Telegram bot
+1. Fix `embedding_v1`: `docker compose exec postgres psql -U postgres -c "CREATE EXTENSION IF NOT EXISTS vector;" climate_gb` then `ALTER TABLE events ADD COLUMN IF NOT EXISTS embedding_v1 vector(1024);`
+2. `git pull` — gets seed-events.ts, graph.ts fix, updated Deploy.md
+3. `docker compose --profile tools build tools && docker compose --profile tools run --rm tools pnpm db:seed-events`
+4. `docker compose build --no-cache web && docker compose --profile app up -d web`
+5. `docker compose restart worker` — watch `docker compose logs -f worker` for embed completion
+6. Clean Pamir Times non-disaster alerts: `DELETE FROM alerts WHERE source_slug = 'pamir-times' AND title NOT ILIKE ANY(ARRAY['%flood%','%glof%','%glacial%','%landslide%','%earthquake%','%disaster%','%emergency%']);`
 
-| #     | Task                                                                            | Status | Notes                                                           |
-| ----- | ------------------------------------------------------------------------------- | ------ | --------------------------------------------------------------- |
-| 2.B.1 | Create bot via BotFather, save token                                            | ⬜     |                                                                 |
-| 2.B.2 | Webhook endpoint `/api/telegram/webhook` served from `web` container behind NPM | ⬜     | Set Telegram webhook to `https://<domain>/api/telegram/webhook` |
-| 2.B.3 | Commands: `/latest`, `/alerts`, `/subscribe <valley>`, `/ask <question>`        | ⬜     |                                                                 |
-| 2.B.4 | Subscription table: user_id + valley → push new alerts for that valley          | ⬜     |                                                                 |
-| 2.B.5 | Cron sends alerts to subscribers when new PDMA/NDMA warning matches             | ⬜     |                                                                 |
-| 2.B.6 | Bot proxies `/ask` to same RAG endpoint                                         | ⬜     | Trim response to Telegram limits                                |
+**Verification:** `curl -N 'https://<domain>/api/agent/query?q=Which+districts+had+the+most+GLOF+events'` returns grounded answer with event citations.
+**Commit:** `feat: RAG-based AI agent with source citations` (all commits already pushed)
 
-**Verification:** Subscribe from personal Telegram, trigger test alert, confirm receipt.
-**Commit:** `feat: telegram bot with subscriptions and Q&A`
+## 2.B — Telegram bot (+ Travel Info)
+
+**Scope expansion (2026-07-23):** Bot should serve GB residents and travelers — not just disaster alerts. Key use cases:
+
+1. Disaster alerts + GLOF warnings pushed to subscribers
+2. Road/travel status ISB → Gilgit-Baltistan (KKH, Babusar Pass, Skardu road)
+3. RAG Q&A grounded in verified event data (same `/api/agent/query` endpoint)
+4. Weather briefing for major GB valleys
+
+| #      | Task                                                                                       | Status | Notes                                                                                                               |
+| ------ | ------------------------------------------------------------------------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------- |
+| 2.B.1  | Create bot via BotFather, save `TELEGRAM_BOT_TOKEN` to VPS `.env`                          | ⬜     |                                                                                                                     |
+| 2.B.2  | Webhook endpoint `POST /api/telegram/webhook` in web container                             | ⬜     | Register with `setWebhook` to `https://<domain>/api/telegram/webhook`. Verify `TELEGRAM_SECRET_TOKEN` header.       |
+| 2.B.3  | Core commands: `/latest`, `/alerts [district]`, `/weather [valley]`, `/ask <question>`     | ⬜     | `/latest` — last 5 verified events. `/alerts` — active DB alerts. `/weather` — last weather_snapshot. `/ask` — RAG. |
+| 2.B.4  | Subscription table: `telegram_subs(chat_id, district, created_at)`                         | ⬜     | `subscribe <district>` / `unsubscribe`. Drizzle schema + migration.                                                 |
+| 2.B.5  | Worker cron: push new alerts to district subscribers within 5 min of DB insert             | ⬜     | Hook into `check-alerts.ts` post-insert. Telegram `sendMessage` via Bot API.                                        |
+| 2.B.6  | `/ask` proxies to RAG endpoint, truncates to 4000 chars, appends citations as inline links | ⬜     | Telegram max message = 4096 chars. Use `parse_mode: "HTML"`.                                                        |
+| 2.B.7  | `/travel` command: KKH + Babusar + Skardu road status                                      | ⬜     | Scrape or cache NHSHA/PDMA road status pages. Fall back to "check official sources" if unavailable.                 |
+| 2.B.8  | `/travel` enriched with active alerts along the route (cross-reference district)           | ⬜     | Match route districts against `alerts` table. "2 active warnings near Chilas."                                      |
+| 2.B.9  | Rate limit: 10 `/ask` queries per user per day (Redis key `tg:rl:{chat_id}`)               | ⬜     | Prevents RAG abuse via bot.                                                                                         |
+| 2.B.10 | Error handling: unknown command → help text, LLM timeout → fallback message                | ⬜     |                                                                                                                     |
+
+**Verification:** From personal Telegram: `/latest`, `/alerts Hunza`, `/ask How many people were affected by GLOF in 2022?`, `/travel`. All return correct grounded data.
+**Commit:** `feat: telegram bot with alerts, travel info, and Q&A`
+
+**Future (after bot stable):** WhatsApp Business API (requires Meta approval + monthly cost — backlog until funded).
 
 ## 2.C — Multilingual (Urdu first)
 
@@ -385,6 +411,35 @@ P2 deferred: weatherSnapshots lat/lng as text (needs migration), DOMPurify for o
 
 **Verification:** Switch to Urdu, all pages render RTL/Urdu correctly, agent responds in Urdu.
 **Commit:** `feat: Urdu localization for web and bot`
+
+## 2.E — Chitral Region Expansion
+
+**Rationale:** Chitral (KPK) shares the Hindu Kush glacial system with GB. AKAH, UNDP GLOF-II, and ICIMOD all operate across both regions as a unit. Adding Chitral: (a) doubles addressable events/data, (b) aligns with AKAH's "GB & Chitral" admin region making partnership pitches stronger, (c) makes the platform cross-provincial → national significance.
+
+**Branding decision needed:** Rename from "Climate Awareness GB" → **"Northern Pakistan Climate Watch"** (recommended) or "HKH Climate Watch". URL can lag behind; update when domain is purchased.
+
+**Key Chitral geography:**
+
+- **Districts:** Lower Chitral (Chitral city, Drosh, Golen), Upper Chitral (Mastuj, Yarkhun, Laspur, Mulkho)
+- **Key valleys at risk:** Yarkhun, Mastuj, Golen, Lot Koh, Laspur
+- **Rivers:** Chitral/Kunar River, Yarkhun River, Mastuj River
+- **Glaciers:** Chiantar, Karambar Lake, Rosh Gol — all active GLOF sources
+- **Travel route:** ISB → Dir → Lowari Tunnel → Chitral (alternative northern route)
+
+| #     | Task                                                                                        | Status | Notes                                                                                                                                                                         |
+| ----- | ------------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2.E.1 | Update site branding + About page + metadata to reflect GB + Chitral scope                  | ⬜     | Rename in `layout.tsx` metadata, `about/page.tsx`, OG tags, sitemap description.                                                                                              |
+| 2.E.2 | Add `pdma-kpk` and `chitral-times` to sources seed script                                   | ⬜     | `web/scripts/seed-sources.ts`. PDMA KPK = `pdma.kp.gov.pk`. Chitral Times = `chitral-times.net`.                                                                              |
+| 2.E.3 | Extend seed events: 15–20 verified Chitral GLOF/flood events                                | ⬜     | Priority: 2015 Chitral floods (60+ dead), 2022 Golen Gol GLOF, 2023 Upper Chitral floods, 2020 Yarkhun flash flood. Sources: ReliefWeb, PDMA KPK, Pamir Times, Dawn archives. |
+| 2.E.4 | Add PDMA KPK scraper to `check-alerts.ts` worker job                                        | ⬜     | Separate from PDMA GB. KPK PDMA has different page structure — inspect HTML before writing selectors.                                                                         |
+| 2.E.5 | Map initial bounds: expand bbox to include Chitral (approx `[71.0, 35.0, 77.5, 37.5]`)      | ⬜     | Currently GB-only bounds. `MapView.tsx` initial `bounds` prop.                                                                                                                |
+| 2.E.6 | District filter on map/alerts: add Upper Chitral + Lower Chitral options                    | ⬜     | `DISTRICTS` constant in filter components. Check consistent spelling with DB entries.                                                                                         |
+| 2.E.7 | Bot `/travel`: add ISB→Chitral route (Dir/Lowari Tunnel) alongside KKH + Babusar + Skardu   | ⬜     | Part of 2.B bot — implement together when bot is built.                                                                                                                       |
+| 2.E.8 | Outreach: personalized pitch to AKAH GB & Chitral using combined dataset                    | ⬜     | After ≥30 Chitral events in DB. Draft in `outreach/akah-pitch.md`.                                                                                                            |
+| 2.E.9 | Khowar language: UI strings and bot responses (v3 refinement, native speaker review needed) | ⬜     | Khowar = primary language of Chitral. Phase 3 scope.                                                                                                                          |
+
+**Exit criteria:** 30+ Chitral events in DB, map covers Chitral, PDMA KPK alerts scraping, branding updated.
+**Commit:** `feat: expand coverage to Chitral region — seed events, map bounds, district filters, branding`
 
 ## 2.D — SMS fallback (optional, budget-dependent)
 
@@ -450,6 +505,8 @@ P2 deferred: weatherSnapshots lat/lng as text (needs migration), DOMPurify for o
 
 # BACKLOG (post-v3, unranked)
 
+- Fix ReliefWeb scraper: HTTP 410 — API endpoint deprecated. Check ReliefWeb API v1 docs for new endpoint or switch to `https://api.reliefweb.int/v1/reports` with `?filter[field]=country&filter[value]=Pakistan&filter[field]=tags&filter[value]=Disaster+Preparedness`.
+- Khowar (Chitrali) language support for bot + UI — requires native speaker review. Phase 3.
 - Native Shina + Burushaski translation with local reviewers
 - Offline PWA for low-connectivity users
 - Satellite imagery diff before/after events (Sentinel Hub)
@@ -466,7 +523,28 @@ P2 deferred: weatherSnapshots lat/lng as text (needs migration), DOMPurify for o
 
 Append short dated entries as work progresses. Newest at top.
 
-## 2026-07-23
+## 2026-07-23 (session 3 — Chitral expansion planning)
+
+- **Scope expanded:** Platform renamed "Northern Pakistan Climate Watch". GB + Chitral now joint coverage area.
+- **Strategic rationale:** AKAH "GB & Chitral" admin unit, UNDP GLOF-II 16-district footprint includes Chitral, ICIMOD HKH mandate. Aligning scope = stronger partnership case.
+- **idea.md updated:** Problem statement, mission, objectives (O7 added), audiences, sources whitelist all updated.
+- **plan.md:** Phase 2.E added (9 tasks: branding, new seed events, PDMA KPK scraper, map bounds, district filters, bot `/travel` Chitral route, Khowar language).
+- **Key Chitral events to seed next session:** 2015 Chitral floods, 2022 Golen Gol GLOF, 2023 Upper Chitral floods, 2020 Yarkhun flash flood.
+- **Next session priorities:** VPS fix sequence (2.A) → verify RAG → start 2.B (bot) → 2.E (Chitral seed events).
+
+## 2026-07-23 (session 2 — RAG + deploy)
+
+- **Phase 2.A nearly complete.** LangGraph RAG pipeline live (`graph.ts`): guardrails → retrieve → generate. Hybrid pgvector + FTS with RRF fusion. OpenRouter LLM fallback. Streaming SSE on `/ask` page.
+- **Fixed:** LangGraph build crash — node name `'blocked'` conflicted with state annotation field. Renamed to `'blockQuery'`. Commit: `fix(rag): rename graph node 'blocked' to 'blockQuery' to avoid LangGraph state channel conflict`.
+- **Created:** `web/scripts/seed-events.ts` — 22 real verified GB GLOF/flood/landslide events (2020–2024), 9 districts, cited sources (NDMA/ICIMOD/ReliefWeb/Pamir Times). `pnpm db:seed-events`.
+- **Deploy.md** rewritten with correct VPS path (`~/docker/apps/climate_awareness/climate_awareness`), SSH address (`ssh qalmaq@100.90.23.36`), manual `embedding_v1` fix, seed-events step, alert cleanup SQL, NPM Basic Auth note, 5 new troubleshooting entries.
+- **VPS pending (user to run):** embedding_v1 column fix → git pull → seed-events → --no-cache web rebuild → worker restart → Pamir Times alert cleanup. See 2.A VPS sequence above.
+- **Alert page:** Pamir Times scraper now has DISASTER_KEYWORDS filter, but old non-disaster articles already in DB. SQL DELETE needed (see 2.A step 6).
+- **ReliefWeb:** HTTP 410 — API endpoint deprecated/moved. Not critical (other scrapers running). Fix deferred to backlog.
+- **Next session:** Run VPS sequence → verify RAG with real queries → start 2.B Telegram bot.
+- **Idea:** Telegram bot to also serve travel info (ISB→GB road status, KKH/Babusar/Skardu) + RAG Q&A. Added as 2.B scope expansion.
+
+## 2026-07-23 (session 1)
 
 - Phase 1.A ✅ (except docker build verification in progress). Next.js 16.2.11 + React 19 + Tailwind 4 + TS 5.9 scaffolded in `web/`.
 - Installed runtime deps: drizzle-orm, pg, next-auth@beta (v5), @auth/drizzle-adapter, maplibre-gl, react-map-gl, zod, date-fns, ioredis, bcryptjs. Dev: drizzle-kit, @types/pg.
