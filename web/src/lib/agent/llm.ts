@@ -8,18 +8,19 @@
 import { ChatOpenAI } from '@langchain/openai';
 
 // Free models on OpenRouter ordered by preference.
-// All support tool-calling and instruction-following at high quality.
+// Verified available 2026-07. Update when models are deprecated or rate-limited.
+// All produce proper content (not reasoning-only) and follow system prompts well.
 const OPENROUTER_MODELS = [
-  'google/gemini-2.0-flash-exp:free', // fast, capable, good instruction-following
-  'meta-llama/llama-3.3-70b-instruct:free', // strong reasoning + tool calling
-  'deepseek/deepseek-r1:free', // excellent reasoning, slower
+  'google/gemma-4-26b-a4b-it:free', // fast, instruction-tuned, 262K ctx
+  'nvidia/nemotron-3-super-120b-a12b:free', // 120B, strong factual Q&A
+  'nvidia/nemotron-3-ultra-550b-a55b:free', // 550B fallback, slower but powerful
 ] as const;
 
 export function createChatModel(streaming = false): ChatOpenAI {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error('OPENROUTER_API_KEY is not set');
 
-  const siteUrl = process.env.NEXTAUTH_URL ?? 'https://climate-gb.naseyou.nl';
+  const siteUrl = process.env.NEXTAUTH_URL ?? 'https://climate-gb.qalmaq.cloud';
 
   const makeModel = (model: string) =>
     new ChatOpenAI({

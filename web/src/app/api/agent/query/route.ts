@@ -19,9 +19,10 @@ export async function POST(req: NextRequest) {
   const rate = checkRateLimit(ip);
 
   if (!rate.allowed) {
+    const limit = parseInt(process.env.AGENT_RATE_LIMIT ?? '20', 10);
     const retryAfterSec = Math.ceil((rate.resetAt - Date.now()) / 1000);
     return NextResponse.json(
-      { error: 'Rate limit exceeded. You can ask 20 questions per day.' },
+      { error: `Rate limit exceeded. You can ask ${limit} questions per day.` },
       { status: 429, headers: { 'Retry-After': String(retryAfterSec) } },
     );
   }
@@ -57,6 +58,7 @@ export async function POST(req: NextRequest) {
       let modelUsed = '';
       let docCount = 0;
       let wasBlocked = false;
+      let blockedMessage = '';
       let citations: Citation[] = [];
 
       try {
@@ -84,6 +86,7 @@ export async function POST(req: NextRequest) {
                   modelUsed?: string;
                   docs?: unknown[];
                   blocked?: boolean;
+                  answer?: string;
                   citations?: Citation[];
                 }
               | undefined;
@@ -92,7 +95,18 @@ export async function POST(req: NextRequest) {
             docCount = output?.docs?.length ?? 0;
             wasBlocked = output?.blocked ?? false;
             citations = output?.citations ?? [];
+
+            // Blocked queries: answer is set directly (no LLM tokens emitted),
+            // so we must send it explicitly as a 'blocked' event.
+            if (wasBlocked && output?.answer) {
+              blockedMessage = output.answer;
+            }
           }
+        }
+
+        // Send blocked message before done (no LLM tokens were streamed for blocked queries)
+        if (wasBlocked && blockedMessage) {
+          send({ type: 'blocked', message: blockedMessage });
         }
 
         // Send citations after streaming completes

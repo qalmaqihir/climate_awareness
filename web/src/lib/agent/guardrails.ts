@@ -35,11 +35,5 @@ export function checkGuardrails(query: string): GuardrailResult {
       return { blocked: true, reason: rule.reason };
     }
   }
-
-  if (query.trim().length > 5 && query.trim().length < 8) {
-    // Very short queries — allow, let LLM handle
-    return { blocked: false };
-  }
-
   return { blocked: false };
 }
