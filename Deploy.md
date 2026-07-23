@@ -98,21 +98,42 @@ cat .env
 
 Check these are correct before proceeding:
 
-| Variable            | Required value                                                          |
-| ------------------- | ----------------------------------------------------------------------- |
-| `POSTGRES_PASSWORD` | Must match what postgres was initialized with                           |
-| `NEXTAUTH_URL`      | Exactly `https://climate-gb.qalmaq.cloud` (your NPM domain, with https) |
-| `NEXTAUTH_SECRET`   | Min 32 random bytes — generate: `openssl rand -base64 32`               |
-| `ADMIN_EMAILS`      | Comma-separated emails that can sign in as admin                        |
+| Variable            | Required value                                                                 |
+| ------------------- | ------------------------------------------------------------------------------ |
+| `POSTGRES_PASSWORD` | **Hex only** — `openssl rand -hex 16`. NO base64 (slashes break the URL)       |
+| `NEXTAUTH_URL`      | Exactly `https://climate-gb.qalmaq.cloud` (your NPM domain, with https)        |
+| `NEXTAUTH_SECRET`   | Min 32 random bytes — `openssl rand -base64 32` (base64 OK here, not in a URL) |
+| `ADMIN_EMAILS`      | Comma-separated emails that can sign in as admin                               |
 
-> **NEXTAUTH_SECRET too short?** The `.env` on VPS currently has a short value. Regenerate:
+> **POSTGRES_PASSWORD must be URL-safe.** The password is embedded in `DATABASE_URL` by docker-compose.
+> Characters like `/` and `=` (present in base64 output) break URL parsing and cause a silent
+> `TypeError: Invalid URL` in both `db:migrate` and `db:seed`. Use hex: `openssl rand -hex 16`.
+>
+> If postgres was already initialized with a bad password:
 >
 > ```bash
+> # Destroy volume and reinit (only safe while no real data exists)
+> docker compose down -v
+>
+> # Generate URL-safe values
+> POSTGRES_PASSWORD=$(openssl rand -hex 16)
 > NEXTAUTH_SECRET=$(openssl rand -base64 32)
+>
+> # Update .env
+> sed -i "s|POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${POSTGRES_PASSWORD}|" .env
 > sed -i "s|NEXTAUTH_SECRET=.*|NEXTAUTH_SECRET=${NEXTAUTH_SECRET}|" .env
+> sed -i "s|NEXTAUTH_URL=.*|NEXTAUTH_URL=https://climate-gb.qalmaq.cloud|" .env
+>
+> # Also update DATABASE_URL to use 127.0.0.1 (only needed for local dev outside Docker)
+> sed -i "s|DATABASE_URL=.*|DATABASE_URL=postgres://climate_gb:${POSTGRES_PASSWORD}@127.0.0.1:5432/climate_gb|" .env
+>
+> chmod 600 .env
+>
+> # Reinit postgres with new password
+> docker compose up -d postgres redis
 > ```
 >
-> Restart web after changing this.
+> Then continue from Step 2.
 
 ---
 
