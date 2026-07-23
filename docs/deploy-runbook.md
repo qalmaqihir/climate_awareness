@@ -265,8 +265,8 @@ cd /opt/climate-gb
 git pull origin main
 
 # 2. Run pending DB migrations
-#    The 'cli' service runs drizzle-kit migrate against the live DB and exits.
-docker compose run --rm cli
+#    The 'tools' service (profile 'tools') runs migrate.ts against the live DB and exits.
+docker compose --profile tools run --rm tools pnpm db:migrate
 
 # 3. Rebuild and restart app containers (zero-downtime via Docker restart policy)
 docker compose up -d --build web worker
