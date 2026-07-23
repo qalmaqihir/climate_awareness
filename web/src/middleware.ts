@@ -1,5 +1,9 @@
-import { auth } from '@/lib/auth';
+import NextAuth from 'next-auth';
+import { authConfig } from '@/lib/auth.config';
 import { NextResponse } from 'next/server';
+
+// Edge-safe auth instance — no pg/adapter (not available in Edge Runtime).
+const { auth } = NextAuth(authConfig);
 
 export default auth((req) => {
   const isAdminRoute = req.nextUrl.pathname.startsWith('/admin');

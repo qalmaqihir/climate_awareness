@@ -5,21 +5,19 @@ import { compare } from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { db } from './db';
 import { users, accounts, sessions, verificationTokens } from './schema';
+import { authConfig } from './auth.config';
 
 // Email allowlist — only these addresses can sign in as admin
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? '').split(',').filter(Boolean);
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  ...authConfig,
   adapter: DrizzleAdapter(db, {
     usersTable: users,
     accountsTable: accounts,
     sessionsTable: sessions,
     verificationTokensTable: verificationTokens,
   }),
-  session: { strategy: 'jwt' },
-  pages: {
-    signIn: '/admin/login',
-  },
   providers: [
     Credentials({
       credentials: {
@@ -44,16 +42,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
     }),
   ],
-  callbacks: {
-    jwt({ token, user }) {
-      if (user) token.isAdmin = (user as { isAdmin?: boolean }).isAdmin ?? false;
-      return token;
-    },
-    session({ session, token }) {
-      if (session.user) session.user.isAdmin = (token.isAdmin as boolean) ?? false;
-      return session;
-    },
-  },
 });
 
 // Extend next-auth types — all in one block to avoid duplicate module declarations.

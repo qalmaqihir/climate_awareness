@@ -9,16 +9,18 @@ Full first-deploy and update workflow. Run commands exactly as written — each 
 ## Architecture recap
 
 ```
-[Cloudflare] → [NPM on VPS] → climate_web:3000
-                                    ↓
-                              climate_postgres  climate_redis
+[Cloudflare] → [NPM — proxy network] → climate_web:3000
+                                              ↓ (climate_net)
+                                    climate_postgres  climate_redis
 ```
+
+`climate_web` is on **both** `proxy` (shared with NPM) and `climate_net` (internal DB/Redis). All other services — postgres, redis, worker — are on `climate_net` only and not reachable from NPM.
 
 Docker Compose profiles:
 
 - _(no profile)_ — postgres + redis only
 - `--profile app` — adds web + worker
-- `--profile tools` — one-off CLI container for migrations/seed/admin (exits after command)
+- `--profile tools` — one-off CLI container (cli stage: pnpm + tsx, no Next.js build)
 
 ---
 
@@ -31,6 +33,8 @@ Drizzle does not auto-migrate. SQL files must be generated locally, committed, a
 cd "/Users/jawadhaider/Climate Awareness/web"
 pnpm db:generate
 ```
+
+`pnpm db:generate` automatically runs `scripts/fix-migrations.ts` via the `postdb:generate` hook. This patches a drizzle-kit bug where it wraps PostGIS types in double-quotes (`"geography(Point, 4326)"`) causing a Postgres error `type "geography(Point, 4326)" does not exist`. The hook strips those quotes. **Commit the patched SQL as-is.**
 
 Inspect what was generated:
 
@@ -47,7 +51,7 @@ git commit -m "feat(db): generate initial schema migrations"
 git push
 ```
 
-> **Do this every time you change `web/src/lib/schema.ts`.** Never edit the generated SQL by hand.
+> **Do this every time you change `web/src/lib/schema.ts`.** Never edit the generated SQL by hand — run `db:generate` instead so the auto-fix hook also runs.
 
 ---
 
@@ -172,13 +176,26 @@ climate_worker      Up X minutes
 
 ## Step 5 — VPS: run database migrations
 
-Migrations run inside the `tools` container (builder stage has pnpm + drizzle-kit):
+Migrations run inside the `tools` container (cli stage: pnpm + tsx, no Next.js build).
+
+> **Important**: If you changed any file under `web/scripts/` since the last deploy, rebuild the tools image first — `docker compose run` uses a cached image by default:
+>
+> ```bash
+> docker compose --profile tools build tools
+> ```
 
 ```bash
 docker compose --profile tools run --rm tools pnpm db:migrate
 ```
 
-Expected output: Drizzle applies each pending `.sql` file and prints confirmation.
+Expected output:
+
+```
+Applying migrations from ./drizzle …
+Migrations complete.
+```
+
+`db:migrate` uses `scripts/migrate.ts` (programmatic drizzle-orm migrator). It prints real errors. The old `drizzle-kit migrate` CLI had silent exit-code-1 failures — do not use it.
 
 Verify tables exist:
 
@@ -206,7 +223,9 @@ docker compose --profile tools run --rm tools \
   pnpm admin:create info@qalmaq.cloud 'YourStrongPassword'
 ```
 
-Replace email and password. Password is hashed with bcrypt — it is not stored in plain text.
+Replace email and password with real values. Password is bcrypt-hashed — not stored in plain text.
+
+**Security**: use a different password than `POSTGRES_PASSWORD`. They serve different systems.
 
 Verify the email is in `ADMIN_EMAILS` in `.env`. If not, add it:
 
@@ -215,31 +234,33 @@ grep ADMIN_EMAILS .env
 # Should include info@qalmaq.cloud
 ```
 
+If `admin:create` fails with `SyntaxError: Cannot use 'import.meta' outside a module` or `top-level await is not allowed`, rebuild the tools image — the cached image is stale:
+
+```bash
+docker compose --profile tools build tools
+docker compose --profile tools run --rm tools \
+  pnpm admin:create info@qalmaq.cloud 'YourStrongPassword'
+```
+
 ---
 
-## Step 8 — VPS: connect NPM to climate_net
+## Step 8 — VPS: configure NPM proxy
 
-NPM must share a Docker network with `climate_web` to route traffic to it.
+`climate_web` is already declared on the external `proxy` network in `docker-compose.yml` — no manual `docker network connect` needed. After `docker compose --profile app up -d --build`, the container joins `proxy` automatically.
 
-```bash
-# Find NPM container name
-docker ps | grep nginx-proxy
-
-# Connect it to climate_net (idempotent)
-docker network connect climate_net <npm-container-name>
-```
-
-Verify:
+Verify `climate_web` is on `proxy`:
 
 ```bash
-docker network inspect climate_net | grep -A2 '"Name"'
-# Should list: climate_postgres, climate_redis, climate_web, climate_worker, <npm-container>
+docker network inspect proxy | grep climate_web
+# Should show the container entry
 ```
 
-In NPM UI:
+In NPM UI, create a proxy host:
 
-- Forward Hostname: `climate_web`
-- Forward Port: `3000`
+- **Domain**: `climate-gb.qalmaq.cloud`
+- **Forward Hostname**: `climate_web`
+- **Forward Port**: `3000`
+- Enable **SSL** (Let's Encrypt or existing cert)
 
 ---
 
@@ -263,13 +284,17 @@ Sign in at `/admin` with the email + password from Step 7.
 
 ## First-deploy checklist
 
-- [ ] `web/drizzle/*.sql` files committed and on VPS
-- [ ] `.env` has correct `NEXTAUTH_URL`, strong `NEXTAUTH_SECRET`, `POSTGRES_PASSWORD` matches DB init
+- [ ] `web/drizzle/*.sql` files committed and on VPS (run `pnpm db:generate` locally, geography quoting auto-fixed)
+- [ ] `.env` has `POSTGRES_PASSWORD` as hex only (`openssl rand -hex 16`), `NEXTAUTH_URL` exactly `https://climate-gb.qalmaq.cloud`, strong `NEXTAUTH_SECRET`
 - [ ] `docker compose ps` → all four containers up, postgres healthy
-- [ ] `\dt` in postgres shows schema tables
-- [ ] Admin user created and can sign in at `/admin`
-- [ ] `https://climate-gb.qalmaq.cloud` serves 200
-- [ ] NPM container joined `climate_net`
+- [ ] `docker compose --profile tools build tools` run after any script change
+- [ ] `db:migrate` output: "Migrations complete." (not silent exit)
+- [ ] `\dt` in postgres shows schema tables including `events`, `sources`, `user`
+- [ ] Seed ran: 7 sources visible at `/api/sources`
+- [ ] Admin user created (`admin:create`) and can sign in at `/admin`
+- [ ] `docker network inspect proxy | grep climate_web` shows the container
+- [ ] NPM proxy host: `climate_web:3000` with SSL
+- [ ] `https://climate-gb.qalmaq.cloud` serves HTTP 200
 
 ---
 
@@ -340,4 +365,103 @@ Covered in `docs/deploy-runbook.md` § 0.12. Ensure `bin/pg-backup.sh` cron is a
 
 ```bash
 crontab -l | grep backup
+```
+
+---
+
+## Troubleshooting — errors hit during first deploy
+
+All of these errors were encountered and fixed. If they appear again, here is the exact cause and fix.
+
+### `type "geography(Point, 4326)" does not exist`
+
+**Cause**: drizzle-kit wraps custom type names in double-quotes in generated SQL. Postgres treats `"geography(Point, 4326)"` as a quoted identifier, not a type call.
+
+**Fix**: Already automated — `pnpm db:generate` runs `scripts/fix-migrations.ts` via `postdb:generate` hook, which strips those quotes. If this appears on VPS it means you ran `pnpm db:generate` without committing, or the hook didn't run. Re-run `pnpm db:generate` locally and push.
+
+---
+
+### `TypeError: Invalid URL` during migrate or seed
+
+**Cause**: `POSTGRES_PASSWORD` contains `/` or `=` (base64 output). These break URL parsing when the password is embedded in `DATABASE_URL` by docker-compose.
+
+**Fix**: Regenerate password as hex:
+
+```bash
+docker compose down -v   # destroys volume — only safe with no real data
+sed -i "s|POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(openssl rand -hex 16)|" .env
+docker compose up -d postgres redis
+```
+
+---
+
+### `relation "sources" does not exist` during seed
+
+**Cause**: Migrations didn't apply. Either `db:migrate` silently failed (old drizzle-kit CLI), or the tools image was cached before the migrate script was fixed.
+
+**Fix**:
+
+```bash
+docker compose --profile tools build tools   # force fresh image
+docker compose --profile tools run --rm tools pnpm db:migrate
+# Must print "Migrations complete." — if it doesn't, the error above it is the real cause
+docker compose --profile tools run --rm tools pnpm db:seed
+```
+
+---
+
+### `db:migrate` exits silently with no output (or exit code 1)
+
+**Cause**: Old cached tools image still running `drizzle-kit migrate` CLI, which swallows errors.
+
+**Fix**: Rebuild tools image — `db:migrate` now uses `scripts/migrate.ts` (programmatic migrator with real error output):
+
+```bash
+docker compose --profile tools build --no-cache tools
+```
+
+---
+
+### `/app/public: not found` during Docker build
+
+**Cause**: `web/public/` directory didn't exist. The `COPY --from=builder /app/public` step in the runner stage fails if there is nothing to copy.
+
+**Fix**: Already in `web/Dockerfile` — the builder stage runs `mkdir -p public && pnpm build`. No action needed unless you manually delete that line.
+
+---
+
+### `top-level await is not allowed in CommonJS` in tools container
+
+**Cause**: `tsx` runs scripts in CJS mode. Top-level `await` outside an `async` function is a syntax error.
+
+**Fix**: Already patched in `scripts/create-admin.ts` and `scripts/migrate.ts` — both wrap logic in `async function main() { ... } main().catch(...)`. If another script shows this error, apply the same pattern.
+
+---
+
+### `ssr: false` build error in `app/` directory (Turbopack/Next.js 16)
+
+**Cause**: `dynamic({ ssr: false })` is only allowed in Client Components. Server Components (files without `'use client'`) cannot use it.
+
+**Fix**: Already applied — `app/map/page.tsx` is now a thin Server Component that renders `MapPageClient.tsx` (`'use client'`), which does the `dynamic` import. Apply same pattern to any future page using `ssr: false`.
+
+---
+
+### `Failed to load external module node:util/types` / Internal Server Error on all pages
+
+**Cause**: Next.js middleware always runs in Edge Runtime (V8 isolate). If `middleware.ts` imports `auth` from `auth.ts`, that pulls in `pg` → `node:util/types` → crash. Every request hits middleware, so every page returns 500.
+
+**Fix**: Already applied — `auth.config.ts` holds an edge-safe config (no pg, no adapter, no bcrypt). `middleware.ts` creates its own `NextAuth(authConfig)` instance. Full `auth.ts` (with DrizzleAdapter + pg) only runs in Server Components and API routes (Node.js runtime).
+
+If this error reappears after adding new imports to `middleware.ts`, check that none of them transitively import `pg`, `drizzle-orm/node-postgres`, `bcryptjs`, or any `node:*` module.
+
+---
+
+### tools container uses stale cached image after script changes
+
+**Cause**: `docker compose run --rm tools` does not rebuild the image. Edits to `web/scripts/` are not picked up until you explicitly rebuild.
+
+**Fix** (run this any time you change a script and need to run it via tools):
+
+```bash
+docker compose --profile tools build tools
 ```
