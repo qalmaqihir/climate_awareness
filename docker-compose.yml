@@ -56,10 +56,9 @@ services:
       NEXTAUTH_URL: ${NEXTAUTH_URL:?NEXTAUTH_URL is required}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?NEXTAUTH_SECRET is required}
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
-    ports:
-      - '127.0.0.1:3000:3000'
     networks:
       - climate_net
+      - proxy
     profiles: ['app']
 
   worker:
@@ -80,7 +79,7 @@ services:
     profiles: ['app']
 
   # One-off CLI container for migrations, seeding, and admin creation.
-  # Uses the builder stage (has pnpm + tsx + drizzle-kit).
+  # Uses the cli stage (has pnpm + tsx but skips Next.js build).
   # Run: docker compose --profile tools run --rm tools <command>
   tools:
     build:
@@ -107,3 +106,5 @@ networks:
   climate_net:
     driver: bridge
     name: climate_net
+  proxy:
+    external: true
