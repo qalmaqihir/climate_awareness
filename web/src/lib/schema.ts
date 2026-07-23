@@ -25,6 +25,20 @@ const geography = customType<{ data: string }>({
   },
 });
 
+// pgvector vector type — stored as bracket-format string "[0.1,0.2,...]"
+const vector = (name: string, dimensions: number) =>
+  customType<{ data: number[]; driverData: string }>({
+    dataType() {
+      return `vector(${dimensions})`;
+    },
+    toDriver(value: number[]): string {
+      return `[${value.join(',')}]`;
+    },
+    fromDriver(value: string): number[] {
+      return value.slice(1, -1).split(',').map(Number);
+    },
+  })(name);
+
 // ─── sources ──────────────────────────────────────────────────────────────────
 export type SourceType = 'media' | 'government' | 'ngo' | 'academic' | 'community';
 export type SourceStatus = 'active' | 'inactive' | 'pending';
@@ -70,6 +84,8 @@ export const events = pgTable(
     verifiedAt: timestamp('verified_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    // pgvector embedding for RAG search (Phase 2.A). NULL until worker indexes the event.
+    embeddingV1: vector('embedding_v1', 1024),
   },
   (t) => [
     index('events_event_type_idx').on(t.eventType),
@@ -120,6 +136,19 @@ export const weatherSnapshots = pgTable('weather_snapshots', {
   weatherCode: integer('weather_code'),
   rawJson: text('raw_json'),
   fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ─── query_logs ───────────────────────────────────────────────────────────────
+// RAG agent usage log. No PII — query and IP are SHA-256 hashed before storage.
+export const queryLogs = pgTable('query_logs', {
+  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+  queryHash: text('query_hash').notNull(),
+  ipHash: text('ip_hash').notNull(),
+  docCount: integer('doc_count'),
+  modelUsed: text('model_used'),
+  durationMs: integer('duration_ms'),
+  blocked: boolean('blocked').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 // ─── NextAuth tables (required by @auth/drizzle-adapter) ──────────────────────

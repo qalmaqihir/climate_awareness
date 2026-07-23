@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { refreshWeather } from './jobs/refresh-weather.js';
 import { checkAlerts } from './jobs/check-alerts.js';
+import { embedUnindexedEvents } from './jobs/embed-events.js';
 import { pool } from './db.js';
 
 console.log('[worker] Starting Climate Awareness GB worker');
@@ -22,12 +23,19 @@ cron.schedule('0 * * * *', async () => {
   await checkAlerts().catch((e) => console.error('[cron] alerts error:', e));
 });
 
+// Embed unindexed events every 15 minutes
+cron.schedule('*/15 * * * *', async () => {
+  console.log('[cron] Triggering embedding job');
+  await embedUnindexedEvents().catch((e) => console.error('[cron] embed error:', e));
+});
+
 console.log('[worker] Crons scheduled. Running initial jobs…');
 
 // Run immediately on startup
 await Promise.all([
   refreshWeather().catch((e) => console.error('[startup] weather error:', e)),
   checkAlerts().catch((e) => console.error('[startup] alerts error:', e)),
+  embedUnindexedEvents().catch((e) => console.error('[startup] embed error:', e)),
 ]);
 
 console.log('[worker] Ready. Waiting for scheduled triggers.');

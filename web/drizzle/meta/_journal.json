@@ -15,6 +15,13 @@
       "when": 1784795855515,
       "tag": "0001_burly_cardiac",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784796725017,
+      "tag": "0002_curious_multiple_man",
+      "breakpoints": true
     }
   ]
 }

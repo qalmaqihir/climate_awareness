@@ -38,6 +38,7 @@ export const metadata: Metadata = {
 const nav = [
   { href: '/map', label: 'Map' },
   { href: '/alerts', label: 'Alerts' },
+  { href: '/ask', label: 'Ask the Data' },
   { href: '/take-action', label: 'Take Action' },
   { href: '/about', label: 'About' },
 ];
