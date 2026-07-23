@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import Link from 'next/link';
 import Script from 'next/script';
+import { headers } from 'next/headers';
 import { DisclaimerButton } from '@/components/DisclaimerModal';
 import './globals.css';
 
@@ -53,7 +54,11 @@ const FOOTER_LINKS = [
   { href: '/map', label: 'Map' },
 ];
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  // Nonce is injected by middleware into request headers so Next.js can apply it
+  // to its own hydration inline scripts and we can pass it to third-party <Script>s.
+  const nonce = (await headers()).get('x-nonce') ?? '';
+
   return (
     <html lang="en" className={`${inter.variable} h-full antialiased`}>
       <head>
@@ -67,6 +72,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body className="min-h-full flex flex-col bg-slate-50 text-slate-900">
         {process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN && (
           <Script
+            nonce={nonce}
             defer
             data-domain={process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN}
             src="https://plausible.io/js/script.js"

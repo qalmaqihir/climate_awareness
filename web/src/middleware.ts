@@ -6,19 +6,39 @@ import { isIpPermanentlyBlocked, isBlockedUserAgent } from '@/lib/ip-block';
 // Edge-safe auth — no pg adapter (not available in Edge Runtime).
 const { auth } = NextAuth(authConfig);
 
-// Anti-AI-scraper headers added to every response.
-const ANTI_BOT_HEADERS: [string, string][] = [
+// Static security headers set on every response (non-nonce, non-CSP).
+const SECURITY_HEADERS: [string, string][] = [
   ['X-Robots-Tag', 'noai, noimageai, noindex-ai'],
   ['X-Content-Type-Options', 'nosniff'],
 ];
 
-function addAntiBotHeaders(res: NextResponse): NextResponse {
-  ANTI_BOT_HEADERS.forEach(([k, v]) => res.headers.set(k, v));
-  return res;
+function buildCsp(nonce: string): string {
+  return [
+    "default-src 'self'",
+    // nonce covers Next.js hydration inline scripts; external Meta/Plausible scripts via domain
+    `script-src 'self' 'nonce-${nonce}' https://www.instagram.com https://connect.facebook.net https://static.cdninstagram.com https://www.facebook.com https://plausible.io`,
+    // MapLibre + Tailwind require inline styles — unsafe-inline is acceptable for style-src
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' https://fonts.gstatic.com",
+    "connect-src 'self' https://*.openfreemap.org https://api.open-meteo.com https://graph.facebook.com https://www.instagram.com https://plausible.io",
+    'frame-src https://www.facebook.com https://www.instagram.com',
+    "worker-src blob: 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    // Prevents clickjacking — who can embed this page in an iframe (CSP supersedes X-Frame-Options)
+    "frame-ancestors 'self'",
+  ].join('; ');
 }
 
-// Wrap NextAuth middleware so we can run bot-blocking before it.
+// Nonce is generated inside the auth callback so it is per-request (not per module load).
 const authMiddleware = auth((req) => {
+  // Generate a fresh nonce for every request
+  const nonceBytes = new Uint8Array(16);
+  crypto.getRandomValues(nonceBytes);
+  const nonce = btoa(String.fromCharCode(...Array.from(nonceBytes)));
+  const csp = buildCsp(nonce);
+
   const path = req.nextUrl.pathname;
   const isAdminRoute = path.startsWith('/admin');
   const isLoginPage = path === '/admin/login';
@@ -26,10 +46,20 @@ const authMiddleware = auth((req) => {
   if (isAdminRoute && !isLoginPage && !req.auth) {
     const loginUrl = new URL('/admin/login', req.url);
     loginUrl.searchParams.set('callbackUrl', path);
-    return addAntiBotHeaders(NextResponse.redirect(loginUrl));
+    const res = NextResponse.redirect(loginUrl);
+    res.headers.set('Content-Security-Policy', csp);
+    SECURITY_HEADERS.forEach(([k, v]) => res.headers.set(k, v));
+    return res;
   }
 
-  return addAntiBotHeaders(NextResponse.next());
+  // Inject nonce into forwarded request headers so server components can read it via headers()
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set('x-nonce', nonce);
+
+  const res = NextResponse.next({ request: { headers: requestHeaders } });
+  res.headers.set('Content-Security-Policy', csp);
+  SECURITY_HEADERS.forEach(([k, v]) => res.headers.set(k, v));
+  return res;
 }) as (req: NextRequest) => Response | NextResponse | Promise<Response | NextResponse>;
 
 export default function middleware(req: NextRequest) {
@@ -49,7 +79,7 @@ export default function middleware(req: NextRequest) {
     return new NextResponse('Forbidden — automated access not permitted', { status: 403 });
   }
 
-  // Delegate to NextAuth middleware for auth guard + header injection
+  // Delegate to NextAuth middleware for auth guard + nonce injection + CSP
   return authMiddleware(req);
 }
 
