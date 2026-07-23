@@ -1,4 +1,5 @@
 export const GB_DISTRICTS = [
+  // Gilgit-Baltistan
   'Gilgit',
   'Hunza',
   'Nagar',
@@ -9,6 +10,9 @@ export const GB_DISTRICTS = [
   'Skardu',
   'Ghanche',
   'Kharmang',
+  // Chitral (KPK)
+  'Upper Chitral',
+  'Lower Chitral',
 ] as const;
 
 export type GBDistrict = (typeof GB_DISTRICTS)[number];
@@ -47,9 +51,9 @@ export const SEVERITY_COLORS: Record<string, string> = {
   critical: '#dc2626',
 };
 
-// Gilgit-Baltistan geographic center
-export const GB_CENTER = { lng: 74.3436, lat: 35.892 };
-export const GB_DEFAULT_ZOOM = 7;
+// Geographic center covering GB + Chitral (expanded from GB-only)
+export const GB_CENTER = { lng: 73.5, lat: 35.9 };
+export const GB_DEFAULT_ZOOM = 6.5;
 
 // OpenFreeMap positron — no token required, MapLibre-compatible
 export const MAP_STYLE = 'https://tiles.openfreemap.org/styles/positron';

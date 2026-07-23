@@ -73,6 +73,24 @@ const SOURCES = [
     status: 'inactive' as const,
     description: 'Regional GB news network. Marked inactive — verify URL before activating.',
   },
+  {
+    name: 'PDMA Khyber Pakhtunkhwa',
+    slug: 'pdma-kpk',
+    url: 'https://pdma.kp.gov.pk',
+    type: 'government' as const,
+    status: 'active' as const,
+    description:
+      'Provincial Disaster Management Authority KPK — covers Chitral disaster alerts and flood situational reports.',
+  },
+  {
+    name: 'Chitral Times',
+    slug: 'chitral-times',
+    url: 'https://www.chitral-times.pk',
+    type: 'media' as const,
+    status: 'active' as const,
+    description:
+      'Leading English/Urdu newspaper for Chitral district. Covers GLOF events, road blockages, and flood damage in Upper and Lower Chitral.',
+  },
 ] satisfies (typeof sources.$inferInsert)[];
 
 async function main() {

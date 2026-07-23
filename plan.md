@@ -4,7 +4,7 @@ _(formerly "Climate Awareness GB" — scope expanded to GB + Chitral on 2026-07-
 
 **Companion to:** `idea.md`
 **Last updated:** 2026-07-23
-**Current phase:** Phase 2.A (VPS fixes pending) → 2.B (Telegram bot) → 2.E (Chitral data expansion) next
+**Current phase:** Phase 2.E (branding ✅, sources ✅, map bounds ✅) → 2.E.3 (Chitral seed events) → 2.B (Telegram bot) next
 **Resume rule:** Always read this file top-to-bottom before resuming work. Update the **Status** column of every task as you go.
 
 ---
@@ -428,12 +428,12 @@ P2 deferred: weatherSnapshots lat/lng as text (needs migration), DOMPurify for o
 
 | #     | Task                                                                                        | Status | Notes                                                                                                                                                                         |
 | ----- | ------------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2.E.1 | Update site branding + About page + metadata to reflect GB + Chitral scope                  | ⬜     | Rename in `layout.tsx` metadata, `about/page.tsx`, OG tags, sitemap description.                                                                                              |
-| 2.E.2 | Add `pdma-kpk` and `chitral-times` to sources seed script                                   | ⬜     | `web/scripts/seed-sources.ts`. PDMA KPK = `pdma.kp.gov.pk`. Chitral Times = `chitral-times.net`.                                                                              |
+| 2.E.1 | Update site branding + About page + metadata to reflect GB + Chitral scope                  | ✅     | `layout.tsx`, `page.tsx`, `about/page.tsx`, OG/Twitter tags, copyright, honeypot domain all updated.                                                                          |
+| 2.E.2 | Add `pdma-kpk` and `chitral-times` to sources seed script                                   | ✅     | `web/scripts/seed-sources.ts` — PDMA KPK + Chitral Times added. Run `pnpm db:seed` on VPS to apply.                                                                           |
 | 2.E.3 | Extend seed events: 15–20 verified Chitral GLOF/flood events                                | ⬜     | Priority: 2015 Chitral floods (60+ dead), 2022 Golen Gol GLOF, 2023 Upper Chitral floods, 2020 Yarkhun flash flood. Sources: ReliefWeb, PDMA KPK, Pamir Times, Dawn archives. |
 | 2.E.4 | Add PDMA KPK scraper to `check-alerts.ts` worker job                                        | ⬜     | Separate from PDMA GB. KPK PDMA has different page structure — inspect HTML before writing selectors.                                                                         |
-| 2.E.5 | Map initial bounds: expand bbox to include Chitral (approx `[71.0, 35.0, 77.5, 37.5]`)      | ⬜     | Currently GB-only bounds. `MapView.tsx` initial `bounds` prop.                                                                                                                |
-| 2.E.6 | District filter on map/alerts: add Upper Chitral + Lower Chitral options                    | ⬜     | `DISTRICTS` constant in filter components. Check consistent spelling with DB entries.                                                                                         |
+| 2.E.5 | Map initial bounds: expand bbox to include Chitral (approx `[71.0, 35.0, 77.5, 37.5]`)      | ✅     | `constants.ts`: `GB_CENTER` → `{lng:73.5, lat:35.9}`, `GB_DEFAULT_ZOOM` → 6.5. Chitral now visible on initial load.                                                           |
+| 2.E.6 | District filter on map/alerts: add Upper Chitral + Lower Chitral options                    | ✅     | `GB_DISTRICTS` in `constants.ts` extended with `Upper Chitral`, `Lower Chitral`.                                                                                              |
 | 2.E.7 | Bot `/travel`: add ISB→Chitral route (Dir/Lowari Tunnel) alongside KKH + Babusar + Skardu   | ⬜     | Part of 2.B bot — implement together when bot is built.                                                                                                                       |
 | 2.E.8 | Outreach: personalized pitch to AKAH GB & Chitral using combined dataset                    | ⬜     | After ≥30 Chitral events in DB. Draft in `outreach/akah-pitch.md`.                                                                                                            |
 | 2.E.9 | Khowar language: UI strings and bot responses (v3 refinement, native speaker review needed) | ⬜     | Khowar = primary language of Chitral. Phase 3 scope.                                                                                                                          |
@@ -522,6 +522,19 @@ P2 deferred: weatherSnapshots lat/lng as text (needs migration), DOMPurify for o
 # WORKING LOG
 
 Append short dated entries as work progresses. Newest at top.
+
+## 2026-07-23 (session 4 — branding + Chitral expansion)
+
+- **Branding complete:** "Northern Pakistan Climate Watch" live in header, footer, metadata, OG/Twitter tags, copyright, honeypot domain.
+- **URL updated:** `climate-gb.qalmaq.cloud` → `climate-awareness-gbc.qalmaq.cloud` across all references.
+- **Map expanded:** Center shifted to `{lng:73.5, lat:35.9}`, zoom reduced to 6.5 — Chitral visible on initial load.
+- **Districts:** `Upper Chitral` + `Lower Chitral` added to filter sidebar and constants.
+- **Sources seed:** PDMA KPK + Chitral Times added — run `pnpm db:seed` on VPS to apply.
+- **Alert scraper:** Chitral keywords (chitral, yarkhun, mastuj, golen, chiantar, karambar, lowari, drosh, khowar) added to `GB_KEYWORDS`.
+- **Bug fixes from review (all confirmed in code):** sanitize-html XSS guard, SSRF fix, AUTH_SECRET, limit:3, expiresAt filter, CSV cap, N+1 batch lookup, vector null guard, IP block memoization, embedHtml cap, lat/lng symmetry, updatedAt on embed, AbortController, migration 0003 indexes, cleanup job — all done and typecheck clean.
+- **Typecheck:** web ✅, worker ✅.
+- **VPS still needed:** `pnpm db:migrate` (0003), `pnpm db:seed` (new sources), docker rebuild web+worker.
+- **Next:** 2.E.3 Chitral seed events → 2.B Telegram bot.
 
 ## 2026-07-23 (session 3 — Chitral expansion planning)
 

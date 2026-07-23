@@ -7,7 +7,7 @@ const playfair = Playfair_Display({ subsets: ['latin'], display: 'swap', weight:
 export const metadata: Metadata = {
   title: 'About',
   description:
-    'Why Climate Awareness GB exists, how we verify events, and our editorial principles.',
+    'Why Northern Pakistan Climate Watch exists, how we verify events, and our editorial principles.',
 };
 
 const SOURCES = [

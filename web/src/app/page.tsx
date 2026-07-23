@@ -14,12 +14,12 @@ const playfair = Playfair_Display({
 });
 
 export const metadata: Metadata = {
-  title: 'Climate Awareness GB — A verified record of a climate crisis in motion',
+  title: 'Northern Pakistan Climate Watch — A verified record of a climate crisis in motion',
   description:
-    'Every monsoon, glacial lake outburst floods, flash floods, and landslides devastate Gilgit-Baltistan. We aggregate verified reports on an interactive map to make the crisis visible.',
+    'Every monsoon, glacial lake outburst floods, flash floods, and landslides devastate Gilgit-Baltistan and Chitral. We aggregate verified reports on an interactive map to make the crisis visible.',
 };
 
-const SITE_URL = process.env.NEXTAUTH_URL ?? 'https://climate-gb.qalmaq.cloud';
+const SITE_URL = process.env.NEXTAUTH_URL ?? 'https://climate-awareness-gbc.qalmaq.cloud';
 
 export default async function HomePage() {
   let stats = { total: 0, verified: 0, last30: 0 };
@@ -41,8 +41,8 @@ export default async function HomePage() {
 
   const shareText =
     stats.last30 > 0
-      ? `Gilgit-Baltistan recorded ${stats.last30} verified climate events in the last 30 days. Track GLOF alerts + flood impacts:`
-      : 'Track verified GLOF events, floods, and disaster alerts across Gilgit-Baltistan, Pakistan:';
+      ? `Northern Pakistan recorded ${stats.last30} verified climate events in the last 30 days. Track GLOF alerts + flood impacts:`
+      : 'Track verified GLOF events, floods, and disaster alerts across Gilgit-Baltistan and Chitral, Pakistan:';
 
   return (
     <>
@@ -83,7 +83,7 @@ export default async function HomePage() {
 
         <div className="relative mx-auto max-w-5xl px-4 py-16 sm:py-24">
           <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-teal-700">
-            Gilgit-Baltistan · Pakistan · Monsoon {new Date().getFullYear()}
+            Gilgit-Baltistan · Chitral · Pakistan · Monsoon {new Date().getFullYear()}
           </p>
 
           <h1
@@ -96,7 +96,7 @@ export default async function HomePage() {
 
           <p className="mt-5 max-w-2xl text-lg leading-relaxed text-slate-600">
             Every monsoon, glacial lake outburst floods, flash floods, and landslides destroy
-            villages across Gilgit-Baltistan. This site aggregates{' '}
+            villages across Gilgit-Baltistan and Chitral. This site aggregates{' '}
             <strong className="font-semibold text-slate-800">verified reports</strong> on an
             interactive map — so the crisis becomes visible to media, organisations, policy makers,
             and the diaspora.
@@ -142,7 +142,7 @@ export default async function HomePage() {
             <StatCounter value={alertCount} label="Active alerts" />
           </div>
           <p className="mt-8 text-center text-xs text-slate-600">
-            Data sourced from PMD, PDMA GB, NDMA, Pamir Times, Ibex Media Network, and ICIMOD.
+            Data sourced from PMD, PDMA GB, PDMA KPK, NDMA, Pamir Times, and ICIMOD.
           </p>
         </div>
       </section>
@@ -200,18 +200,20 @@ export default async function HomePage() {
           <h2
             className={`${playfair.className} mt-2 text-2xl font-bold text-slate-900 sm:text-3xl`}
           >
-            Every share puts GB on the map.
+            Every share puts Northern Pakistan on the map.
           </h2>
           <p className="mt-3 text-sm text-slate-600">
             Share this site with journalists, NGOs, policy makers, or anyone who needs to understand
-            what&apos;s happening in Gilgit-Baltistan.
+            what&apos;s happening in Gilgit-Baltistan and Chitral.
           </p>
           <div className="mt-6">
             <ShareButtons url={SITE_URL} text={shareText} />
           </div>
           <p className="mt-5 text-xs text-slate-500">
             Suggested hashtags:{' '}
-            <span className="font-mono">#GilgitBaltistan #GLOF #ClimateAction #Pakistan</span>
+            <span className="font-mono">
+              #GilgitBaltistan #Chitral #GLOF #ClimateAction #Pakistan
+            </span>
           </p>
         </div>
       </section>

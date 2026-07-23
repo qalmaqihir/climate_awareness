@@ -19,9 +19,10 @@ const RELIEFWEB_URL = 'https://api.reliefweb.int/v1/reports';
 const PAMIR_TIMES_RSS = 'https://www.pamirtimes.net/feed/';
 const GDACS_RSS = 'https://www.gdacs.org/xml/rss.xml';
 
-const UA = 'Climate-Awareness-GB/1.0 (+https://climate-gb.qalmaq.cloud)';
+const UA = 'NP-Climate-Watch/1.0 (+https://climate-awareness-gbc.qalmaq.cloud)';
 
 const GB_KEYWORDS = [
+  // Gilgit-Baltistan
   'gilgit',
   'baltistan',
   'glof',
@@ -38,6 +39,16 @@ const GB_KEYWORDS = [
   'kharmang',
   'karakoram',
   'pamir',
+  // Chitral (KPK)
+  'chitral',
+  'yarkhun',
+  'mastuj',
+  'golen',
+  'chiantar',
+  'karambar',
+  'lowari',
+  'drosh',
+  'khowar',
 ];
 
 function isGbRelevant(text: string): boolean {
