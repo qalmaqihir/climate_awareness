@@ -12,6 +12,17 @@ ENV PATH=$PNPM_HOME:$PATH
 COPY package.json pnpm-lock.yaml .npmrc pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile --prod=false
 
+# ─── cli ─────────────────────────────────────────────────────────────────
+# Used by the `tools` compose service for migrations, seed, admin-create.
+# Has pnpm + tsx + drizzle-kit. Does NOT run next build.
+FROM node:22-alpine AS cli
+WORKDIR /app
+RUN npm install -g pnpm@11.15.1 --prefer-offline || npm install -g pnpm@11.15.1
+ENV PNPM_HOME=/root/.local/share/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
 # ─── builder ─────────────────────────────────────────────────────────────
 FROM node:22-alpine AS builder
 WORKDIR /app

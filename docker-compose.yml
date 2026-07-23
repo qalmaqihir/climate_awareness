@@ -86,7 +86,7 @@ services:
     build:
       context: ./web
       dockerfile: Dockerfile
-      target: builder
+      target: cli
     working_dir: /app
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-climate_gb}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-climate_gb}
