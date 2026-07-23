@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "db:seed": "tsx scripts/seed-sources.ts"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.3",
@@ -35,6 +36,7 @@
     "@types/react-dom": "^19",
     "drizzle-kit": "^0.31.6",
     "eslint": "^9",
+    "tsx": "^4.19.4",
     "eslint-config-next": "16.2.11",
     "tailwindcss": "^4",
     "typescript": "^5"

@@ -148,19 +148,19 @@ NEXTAUTH_SECRET=<openssl rand -base64 32>
 
 ## 1.B — Postgres/PostGIS schema + migrations (Week 1)
 
-| #      | Task                                                                                                               | Status | Notes                                                              |
-| ------ | ------------------------------------------------------------------------------------------------------------------ | ------ | ------------------------------------------------------------------ |
-| 1.B.1  | Enable extensions on first boot: `postgis`, `pgcrypto` (for `gen_random_uuid`)                                     | ⬜     | Init SQL in `db/init/00-extensions.sql` mounted via docker-compose |
-| 1.B.2  | Choose migration tool: Drizzle Kit (recommended) or Prisma Migrate                                                 | ⬜     | Drizzle for lightweight + geo type support                         |
-| 1.B.3  | Define `sources` schema                                                                                            | ⬜     | Whitelisted orgs table                                             |
-| 1.B.4  | Define `events` schema with `geography(Point)` column                                                              | ⬜     | See SQL reference below                                            |
-| 1.B.5  | Define `alerts` schema                                                                                             | ⬜     |                                                                    |
-| 1.B.6  | Define `weather_snapshots` schema                                                                                  | ⬜     |                                                                    |
-| 1.B.7  | Define NextAuth tables (`users`, `accounts`, `sessions`, `verification_tokens`) via `@auth/drizzle-adapter` schema | ⬜     |                                                                    |
-| 1.B.8  | Enforce app-layer access control (admin routes only): no RLS needed since only server-side queries                 | ⬜     | RLS optional; can add later                                        |
-| 1.B.9  | Seed script `db/seed.ts` inserts whitelisted sources                                                               | ⬜     | Pamir Times, Ibex, PDMA, NDMA, AKAH, ICIMOD, UNDP                  |
-| 1.B.10 | Server DB client in `web/lib/db.ts` (Drizzle instance + typed queries)                                             | ⬜     |                                                                    |
-| 1.B.11 | Migration workflow docs in `db/README.md`                                                                          | ⬜     | `drizzle-kit generate` + `drizzle-kit migrate`                     |
+| #      | Task                                                                                                               | Status | Notes                                                                            |
+| ------ | ------------------------------------------------------------------------------------------------------------------ | ------ | -------------------------------------------------------------------------------- |
+| 1.B.1  | Enable extensions on first boot: `postgis`, `pgcrypto` (for `gen_random_uuid`)                                     | ✅     | `db/init/00-extensions.sql`                                                      |
+| 1.B.2  | Choose migration tool: Drizzle Kit (recommended) or Prisma Migrate                                                 | ✅     | Drizzle Kit. `web/drizzle.config.ts` written.                                    |
+| 1.B.3  | Define `sources` schema                                                                                            | ✅     | `web/src/lib/schema.ts` — `sources` table                                        |
+| 1.B.4  | Define `events` schema with `geography(Point)` column                                                              | ✅     | `customType` geography(Point,4326) via PostGIS                                   |
+| 1.B.5  | Define `alerts` schema                                                                                             | ✅     | `alerts` table with level + district + expiry                                    |
+| 1.B.6  | Define `weather_snapshots` schema                                                                                  | ✅     | `weather_snapshots` table, keyed by district + fetchedAt                         |
+| 1.B.7  | Define NextAuth tables (`users`, `accounts`, `sessions`, `verification_tokens`) via `@auth/drizzle-adapter` schema | ✅     | All 4 tables in schema.ts; adapter wired in `auth.ts`                            |
+| 1.B.8  | Enforce app-layer access control (admin routes only): no RLS needed since only server-side queries                 | ✅     | `ADMIN_EMAILS` allowlist env var; `isAdmin` JWT claim                            |
+| 1.B.9  | Seed script for whitelisted sources                                                                                | ✅     | `web/scripts/seed-sources.ts` — 7 sources; `pnpm db:seed`                        |
+| 1.B.10 | Server DB client in `web/src/lib/db.ts` (Drizzle instance + typed queries)                                         | ✅     | Pool(10) + drizzle-orm/node-postgres                                             |
+| 1.B.11 | Migration workflow: `pnpm db:generate` + `pnpm db:migrate`                                                         | ✅     | Documented in runbook; migrations in `web/drizzle/` (gitignored until first gen) |
 
 ### Schema reference
 
