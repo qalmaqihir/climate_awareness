@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { events } from '@/lib/schema';
+import { COVERAGE_ENVELOPE } from '@/lib/constants';
 import { sanitizeEmbed } from '@/lib/sanitize';
 
 const patchSchema = z
@@ -21,12 +22,16 @@ const patchSchema = z
         'other',
       ])
       .optional(),
+    eventSubtype: z.enum(['flash_flood']).nullable().optional(),
     severity: z.enum(['low', 'moderate', 'high', 'critical']).optional(),
     status: z.enum(['verified', 'unverified', 'disputed', 'archived']).optional(),
+    state: z.enum(['active', 'resolved']).optional(),
     district: z.string().optional(),
     locationName: z.string().optional(),
-    latitude: z.number().min(-90).max(90).optional(),
-    longitude: z.number().min(-180).max(180).optional(),
+    locationPrecision: z.enum(['exact', 'approximate', 'district', 'pending']).optional(),
+    locationRationale: z.string().max(1000).nullable().optional(),
+    latitude: z.number().min(COVERAGE_ENVELOPE.minLat).max(COVERAGE_ENVELOPE.maxLat).optional(),
+    longitude: z.number().min(COVERAGE_ENVELOPE.minLng).max(COVERAGE_ENVELOPE.maxLng).optional(),
     sourceUrl: z
       .string()
       .url()
@@ -38,7 +43,17 @@ const patchSchema = z
   })
   .refine((d) => (d.latitude !== undefined) === (d.longitude !== undefined), {
     message: 'Provide both latitude and longitude, or neither',
-  });
+  })
+  .refine((d) => d.eventSubtype == null || d.eventType == null || d.eventType === 'flood', {
+    message: 'eventSubtype is only valid when eventType is flood',
+  })
+  .refine(
+    (d) => {
+      if (d.locationPrecision === 'exact') return d.latitude != null && d.longitude != null;
+      return true;
+    },
+    { message: 'exact precision requires latitude and longitude' },
+  );
 
 async function requireAdmin() {
   const session = await auth();
@@ -73,10 +88,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...(d.title !== undefined && { title: d.title }),
       ...(d.description !== undefined && { description: d.description }),
       ...(d.eventType !== undefined && { eventType: d.eventType }),
+      ...(d.eventSubtype !== undefined && { eventSubtype: d.eventSubtype }),
       ...(d.severity !== undefined && { severity: d.severity }),
       ...(d.status !== undefined && { status: d.status }),
+      ...(d.state !== undefined && { state: d.state }),
       ...(d.district !== undefined && { district: d.district }),
       ...(d.locationName !== undefined && { locationName: d.locationName }),
+      ...(d.locationPrecision !== undefined && { locationPrecision: d.locationPrecision }),
+      ...(d.locationRationale !== undefined && { locationRationale: d.locationRationale }),
       ...(locationWkt !== undefined && { location: locationWkt as unknown as string }),
       ...(d.sourceUrl !== undefined && { sourceUrl: d.sourceUrl }),
       ...(d.embedHtml !== undefined && {
@@ -96,7 +115,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   return NextResponse.json({ ok: true });
 }
 
-// Soft-delete: set status to archived
+// Soft-delete: set status to archived (archived ≠ resolved; this is editorial removal)
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!(await requireAdmin())) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

@@ -3,6 +3,7 @@ import { z } from 'zod/v4';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { events } from '@/lib/schema';
+import { COVERAGE_ENVELOPE } from '@/lib/constants';
 import { desc } from 'drizzle-orm';
 import { sanitizeEmbed } from '@/lib/sanitize';
 
@@ -19,12 +20,19 @@ const createSchema = z
       'displacement',
       'other',
     ]),
+    // eventSubtype is valid only when eventType == 'flood'
+    eventSubtype: z.enum(['flash_flood']).optional(),
     severity: z.enum(['low', 'moderate', 'high', 'critical']).default('moderate'),
     status: z.enum(['verified', 'unverified', 'disputed', 'archived']).default('unverified'),
+    // public lifecycle: separate from editorial status
+    state: z.enum(['active', 'resolved']).default('active'),
     district: z.string().optional(),
     locationName: z.string().optional(),
-    latitude: z.number().min(-90).max(90).optional(),
-    longitude: z.number().min(-180).max(180).optional(),
+    // honest location model: precision must always be set when coordinates are present
+    locationPrecision: z.enum(['exact', 'approximate', 'district', 'pending']).default('pending'),
+    locationRationale: z.string().max(1000).optional(),
+    latitude: z.number().min(COVERAGE_ENVELOPE.minLat).max(COVERAGE_ENVELOPE.maxLat).optional(),
+    longitude: z.number().min(COVERAGE_ENVELOPE.minLng).max(COVERAGE_ENVELOPE.maxLng).optional(),
     sourceId: z.number().int().optional(),
     sourceUrl: z
       .string()
@@ -38,7 +46,18 @@ const createSchema = z
   })
   .refine((d) => (d.latitude == null) === (d.longitude == null), {
     message: 'Provide both latitude and longitude, or neither',
-  });
+  })
+  .refine((d) => d.eventSubtype == null || d.eventType === 'flood', {
+    message: 'eventSubtype is only valid when eventType is flood',
+  })
+  .refine(
+    (d) => {
+      // exact precision requires coordinates
+      if (d.locationPrecision === 'exact') return d.latitude != null && d.longitude != null;
+      return true;
+    },
+    { message: 'exact precision requires latitude and longitude' },
+  );
 
 async function requireAdmin() {
   const session = await auth();
@@ -56,8 +75,11 @@ export async function GET() {
       id: events.id,
       title: events.title,
       eventType: events.eventType,
+      eventSubtype: events.eventSubtype,
       severity: events.severity,
       status: events.status,
+      state: events.state,
+      locationPrecision: events.locationPrecision,
       district: events.district,
       locationName: events.locationName,
       sourceUrl: events.sourceUrl,
@@ -93,10 +115,14 @@ export async function POST(req: NextRequest) {
       title: d.title,
       description: d.description,
       eventType: d.eventType,
+      eventSubtype: d.eventSubtype,
       severity: d.severity,
       status: d.status,
+      state: d.state,
       district: d.district,
       locationName: d.locationName,
+      locationPrecision: d.locationPrecision,
+      locationRationale: d.locationRationale,
       location: locationWkt as unknown as string,
       sourceId: d.sourceId,
       sourceUrl: d.sourceUrl,

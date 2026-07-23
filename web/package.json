@@ -12,6 +12,9 @@
     "postdb:generate": "tsx scripts/fix-migrations.ts",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:studio": "drizzle-kit studio",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "db:seed": "tsx scripts/seed-sources.ts",
     "db:seed-events": "tsx scripts/seed-events.ts",
     "db:fix-source-urls": "tsx scripts/fix-source-urls.ts",
@@ -43,12 +46,14 @@
     "@types/pg": "^8.15.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitest/coverage-v8": "^4.1.10",
     "drizzle-kit": "^0.31.6",
     "eslint": "^9",
     "eslint-config-next": "16.2.11",
     "tailwindcss": "^4",
     "tsx": "^4.19.4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   },
   "packageManager": "pnpm@11.15.1"
 }

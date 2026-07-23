@@ -1,17 +1,21 @@
 import { and, desc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { db } from './db';
 import { alerts, events, sources } from './schema';
-import type { EventSeverity, EventStatus, EventType } from './schema';
+import type { EventSeverity, EventState, EventStatus, EventSubtype, EventType } from './schema';
 
 export type EventRow = {
   id: number;
   title: string;
   description: string | null;
   eventType: EventType;
+  eventSubtype: EventSubtype | null;
   severity: EventSeverity;
   status: EventStatus;
+  state: EventState;
   district: string | null;
   locationName: string | null;
+  locationPrecision: string | null;
+  locationRationale: string | null;
   sourceId: number | null;
   sourceUrl: string | null;
   sourcePostId: string | null;
@@ -35,10 +39,14 @@ const eventSelect = {
   title: events.title,
   description: events.description,
   eventType: events.eventType,
+  eventSubtype: events.eventSubtype,
   severity: events.severity,
   status: events.status,
+  state: events.state,
   district: events.district,
   locationName: events.locationName,
+  locationPrecision: events.locationPrecision,
+  locationRationale: events.locationRationale,
   sourceId: events.sourceId,
   sourceUrl: events.sourceUrl,
   sourcePostId: events.sourcePostId,
@@ -58,6 +66,8 @@ export interface EventFilters {
   from?: Date;
   to?: Date;
   status?: string;
+  // public lifecycle filter — 'active' | 'resolved'
+  state?: string;
 }
 
 export async function getEvents(filters?: EventFilters, limit?: number): Promise<EventRow[]> {
@@ -65,6 +75,9 @@ export async function getEvents(filters?: EventFilters, limit?: number): Promise
 
   if (filters?.status) {
     conditions.push(eq(events.status, filters.status as EventStatus));
+  }
+  if (filters?.state) {
+    conditions.push(eq(events.state, filters.state as EventState));
   }
   if (filters?.types?.length) {
     conditions.push(inArray(events.eventType, filters.types as EventType[]));

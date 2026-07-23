@@ -2,7 +2,13 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { GB_DISTRICTS, EVENT_TYPE_LABELS } from '@/lib/constants';
+import {
+  GB_DISTRICTS,
+  EVENT_TYPE_LABELS,
+  EVENT_SUBTYPE_LABELS,
+  LOCATION_PRECISION_LABELS,
+  INCIDENT_STATE_LABELS,
+} from '@/lib/constants';
 import type { EventType, EventSeverity } from '@/lib/schema';
 
 const EVENT_TYPES = Object.keys(EVENT_TYPE_LABELS) as EventType[];
@@ -12,10 +18,14 @@ interface FormState {
   title: string;
   description: string;
   eventType: EventType;
+  eventSubtype: string;
   severity: EventSeverity;
   status: 'verified' | 'unverified';
+  state: 'active' | 'resolved';
   district: string;
   locationName: string;
+  locationPrecision: string;
+  locationRationale: string;
   latitude: string;
   longitude: string;
   sourceUrl: string;
@@ -28,10 +38,14 @@ const EMPTY_FORM: FormState = {
   title: '',
   description: '',
   eventType: 'flood',
+  eventSubtype: '',
   severity: 'moderate',
   status: 'unverified',
+  state: 'active',
   district: '',
   locationName: '',
+  locationPrecision: 'pending',
+  locationRationale: '',
   latitude: '',
   longitude: '',
   sourceUrl: '',
@@ -85,10 +99,14 @@ export default function NewEventPage() {
       title: form.title,
       description: form.description || undefined,
       eventType: form.eventType,
+      eventSubtype: form.eventSubtype || undefined,
       severity: form.severity,
       status: form.status,
+      state: form.state,
       district: form.district || undefined,
       locationName: form.locationName || undefined,
+      locationPrecision: form.locationPrecision,
+      locationRationale: form.locationRationale || undefined,
       latitude: form.latitude ? parseFloat(form.latitude) : undefined,
       longitude: form.longitude ? parseFloat(form.longitude) : undefined,
       sourceUrl: form.sourceUrl || undefined,
@@ -176,12 +194,16 @@ export default function NewEventPage() {
             />
           </Field>
 
+          {/* Event type + subtype */}
           <div className="grid grid-cols-2 gap-4">
             <Field label="Event type *">
               <select
                 required
                 value={form.eventType}
-                onChange={set('eventType')}
+                onChange={(e) => {
+                  const t = e.target.value as EventType;
+                  setForm((p) => ({ ...p, eventType: t, eventSubtype: '' }));
+                }}
                 className={inputClass}
               >
                 {EVENT_TYPES.map((t) => (
@@ -192,6 +214,25 @@ export default function NewEventPage() {
               </select>
             </Field>
 
+            <Field label="Subtype">
+              <select
+                value={form.eventSubtype}
+                onChange={set('eventSubtype')}
+                disabled={form.eventType !== 'flood'}
+                className={`${inputClass} disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400`}
+              >
+                <option value="">— None —</option>
+                {Object.entries(EVENT_SUBTYPE_LABELS).map(([k, v]) => (
+                  <option key={k} value={k}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+
+          {/* Severity + Status */}
+          <div className="grid grid-cols-2 gap-4">
             <Field label="Severity *">
               <select
                 required
@@ -206,8 +247,31 @@ export default function NewEventPage() {
                 ))}
               </select>
             </Field>
+
+            <Field label="Verification status">
+              <select value={form.status} onChange={set('status')} className={inputClass}>
+                <option value="unverified">Unverified</option>
+                <option value="verified">Verified</option>
+              </select>
+            </Field>
           </div>
 
+          {/* Incident state */}
+          <Field label="Incident state">
+            <select value={form.state} onChange={set('state')} className={inputClass}>
+              {Object.entries(INCIDENT_STATE_LABELS).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-[11px] text-slate-400">
+              Active = acute impact ongoing. Resolved = incident ended (does not archive the
+              record).
+            </p>
+          </Field>
+
+          {/* District + Location name */}
           <div className="grid grid-cols-2 gap-4">
             <Field label="District">
               <select value={form.district} onChange={set('district')} className={inputClass}>
@@ -230,34 +294,65 @@ export default function NewEventPage() {
             </Field>
           </div>
 
+          {/* Coordinates */}
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Latitude">
+            <Field label="Latitude (34.5 – 37.5)">
               <input
                 type="number"
                 step="any"
-                min={33}
-                max={38}
+                min={34.5}
+                max={37.5}
                 value={form.latitude}
                 onChange={set('latitude')}
                 className={inputClass}
-                placeholder="36.4"
+                placeholder="36.35"
               />
             </Field>
 
-            <Field label="Longitude">
+            <Field label="Longitude (70.5 – 77.5)">
               <input
                 type="number"
                 step="any"
-                min={70}
-                max={78}
+                min={70.5}
+                max={77.5}
                 value={form.longitude}
                 onChange={set('longitude')}
                 className={inputClass}
-                placeholder="74.6"
+                placeholder="74.73"
               />
             </Field>
           </div>
 
+          {/* Location precision + rationale */}
+          <Field label="Location precision *">
+            <select
+              value={form.locationPrecision}
+              onChange={set('locationPrecision')}
+              className={inputClass}
+            >
+              {Object.entries(LOCATION_PRECISION_LABELS).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-[11px] text-slate-400">
+              exact = source supports the specific site · approximate = named locality, uncertain
+              site · district = multi-valley/district-wide · pending = no publishable location yet
+            </p>
+          </Field>
+
+          <Field label="Location rationale (moderator note — not public)">
+            <textarea
+              rows={2}
+              value={form.locationRationale}
+              onChange={set('locationRationale')}
+              className={inputClass}
+              placeholder="Source: ICIMOD GLOF report, Figure 3. Coordinates from Hassanabad bridge GPS."
+            />
+          </Field>
+
+          {/* Dates + affected count */}
           <div className="grid grid-cols-2 gap-4">
             <Field label="Reported at *">
               <input
@@ -280,13 +375,6 @@ export default function NewEventPage() {
               />
             </Field>
           </div>
-
-          <Field label="Status">
-            <select value={form.status} onChange={set('status')} className={inputClass}>
-              <option value="unverified">Unverified</option>
-              <option value="verified">Verified</option>
-            </select>
-          </Field>
 
           <Field label="Source URL">
             <input

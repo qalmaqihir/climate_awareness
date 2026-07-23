@@ -59,8 +59,17 @@ export const sources = pgTable('sources', {
 // ─── events ───────────────────────────────────────────────────────────────────
 export type EventType =
   'glof' | 'flood' | 'landslide' | 'infrastructure_damage' | 'casualty' | 'displacement' | 'other';
+// flash_flood is not a canonical EventType; it is an eventSubtype under flood.
+export type EventSubtype = 'flash_flood';
 export type EventSeverity = 'low' | 'moderate' | 'high' | 'critical';
 export type EventStatus = 'verified' | 'unverified' | 'disputed' | 'archived';
+// state tracks the public incident lifecycle; status tracks editorial verification.
+// archived ≠ resolved: archived is a private editorial state; resolved is a public lifecycle state.
+export type EventState = 'active' | 'resolved';
+// Honest location model: exact requires a source-supported specific site;
+// approximate = named locality but uncertain exact site;
+// district = multi-valley or district-wide report; pending = no publishable geometry yet.
+export type LocationPrecision = 'exact' | 'approximate' | 'district' | 'pending';
 
 export const events = pgTable(
   'events',
@@ -69,9 +78,18 @@ export const events = pgTable(
     title: text('title').notNull(),
     description: text('description'),
     eventType: text('event_type').$type<EventType>().notNull(),
+    // Only set when eventType == 'flood' and the incident is specifically a flash flood.
+    eventSubtype: text('event_subtype').$type<EventSubtype>(),
     severity: text('severity').$type<EventSeverity>().notNull().default('moderate'),
+    // editorial verification state — not the same as the public incident lifecycle state
     status: text('status').$type<EventStatus>().notNull().default('unverified'),
+    // public incident lifecycle: active while acute impact continues; resolved when ended
+    state: text('state').$type<EventState>().notNull().default('active'),
     location: geography('location'),
+    // honest location model: must be set before any location is made public
+    locationPrecision: text('location_precision').$type<LocationPrecision>().default('pending'),
+    // source/rationale for the approved public geometry (moderator note)
+    locationRationale: text('location_rationale'),
     locationName: text('location_name'),
     district: text('district'),
     sourceId: integer('source_id').references(() => sources.id, {
