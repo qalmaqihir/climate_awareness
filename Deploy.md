@@ -321,6 +321,69 @@ docker compose logs -f web
 
 ---
 
+## Phase 2.A update — pgvector + RAG agent (run once)
+
+This phase adds the pgvector extension to postgres and the `/ask` AI page.
+
+**1. Add new env vars to root `.env`** (one file, shared by all services via docker-compose):
+
+```bash
+cd ~/docker/apps/climate_awareness/climate_awareness
+nano .env
+```
+
+Add these lines:
+
+```
+OPENROUTER_API_KEY=<your key from openrouter.ai>
+JINA_API_KEY=<your key from jina.ai>
+# Optional — default is 20 queries/IP/day
+# AGENT_RATE_LIMIT=20
+```
+
+**2. Rebuild postgres** (adds pgvector package on top of the PostGIS image):
+
+```bash
+docker compose build postgres
+docker compose up -d postgres
+# Wait for healthy
+docker compose ps
+```
+
+**3. Apply migration 0002** (query_logs table + embedding_v1 column):
+
+```bash
+docker compose --profile tools run --rm tools pnpm db:migrate
+```
+
+Expected: `Migrations complete.`
+
+Verify vector column exists:
+
+```bash
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "\d events" | grep embedding
+# Should show: embedding_v1 | vector(1024)
+```
+
+**4. Rebuild web + worker** (picks up new env vars and code):
+
+```bash
+docker compose --profile app up -d --build web worker
+```
+
+**5. Check worker is embedding events:**
+
+```bash
+docker compose logs worker | grep embed
+# After ~15 min: "[embed] Batch 1: 10 events embedded"
+# If no JINA_API_KEY: "[embed] JINA_API_KEY not set — skipping embedding job"
+```
+
+Once events are embedded, `/ask` returns grounded answers with citations.
+
+---
+
 ## Rollback
 
 ```bash
