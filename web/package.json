@@ -17,6 +17,7 @@
     "test:coverage": "vitest run --coverage",
     "db:seed": "tsx scripts/seed-sources.ts",
     "db:seed-events": "tsx scripts/seed-events.ts",
+    "db:backfill-locations": "tsx scripts/backfill-seed-locations.ts",
     "db:fix-source-urls": "tsx scripts/fix-source-urls.ts",
     "admin:create": "tsx scripts/create-admin.ts"
   },
