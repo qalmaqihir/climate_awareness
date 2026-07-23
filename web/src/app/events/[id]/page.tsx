@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -10,11 +11,16 @@ import {
   SEVERITY_COLORS,
 } from '@/lib/constants';
 
+// Deduplicate the DB lookup between generateMetadata and the page component
+const getEventCached = cache(getEventById);
+
 type Props = { params: Promise<{ id: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
-  const event = await getEventById(parseInt(id));
+  const parsedId = parseInt(id);
+  if (isNaN(parsedId)) return { title: 'Event not found' };
+  const event = await getEventCached(parsedId);
   if (!event) return { title: 'Event not found' };
   return {
     title: event.title,
@@ -26,7 +32,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function EventDetailPage({ params }: Props) {
   const { id } = await params;
-  const event = await getEventById(parseInt(id));
+  const parsedId = parseInt(id);
+  if (isNaN(parsedId)) notFound();
+  const event = await getEventCached(parsedId);
 
   if (!event) notFound();
 
@@ -91,13 +99,12 @@ export default async function EventDetailPage({ params }: Props) {
           <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
             Source post
           </p>
-          {/* oEmbed HTML from verified sources — markup trusted */}
           <div className="oembed-container" dangerouslySetInnerHTML={{ __html: event.embedHtml }} />
         </div>
       )}
 
-      {/* Source link */}
-      {event.sourceUrl && (
+      {/* Source link — only render for http/https to prevent javascript: URI injection */}
+      {event.sourceUrl && /^https?:\/\//i.test(event.sourceUrl) && (
         <div className="mb-6">
           <a
             href={event.sourceUrl}

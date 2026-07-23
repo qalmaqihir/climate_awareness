@@ -4,11 +4,12 @@ import { eq } from 'drizzle-orm';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { events } from '@/lib/schema';
+import { sanitizeEmbed } from '@/lib/sanitize';
 
 const patchSchema = z
   .object({
     title: z.string().min(3).max(300).optional(),
-    description: z.string().optional(),
+    description: z.string().max(10_000).optional(),
     eventType: z
       .enum([
         'glof',
@@ -26,12 +27,16 @@ const patchSchema = z
     locationName: z.string().optional(),
     latitude: z.number().min(-90).max(90).optional(),
     longitude: z.number().min(-180).max(180).optional(),
-    sourceUrl: z.string().url().optional(),
-    embedHtml: z.string().optional(),
+    sourceUrl: z
+      .string()
+      .url()
+      .refine((url) => /^https?:\/\//i.test(url), 'Only http/https URLs allowed')
+      .optional(),
+    embedHtml: z.string().max(50_000).optional(),
     affectedCount: z.number().int().min(0).optional(),
     reportedAt: z.string().datetime().optional(),
   })
-  .refine((d) => (d.latitude == null) === (d.longitude == null), {
+  .refine((d) => (d.latitude !== undefined) === (d.longitude !== undefined), {
     message: 'Provide both latitude and longitude, or neither',
   });
 
@@ -74,7 +79,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...(d.locationName !== undefined && { locationName: d.locationName }),
       ...(locationWkt !== undefined && { location: locationWkt as unknown as string }),
       ...(d.sourceUrl !== undefined && { sourceUrl: d.sourceUrl }),
-      ...(d.embedHtml !== undefined && { embedHtml: d.embedHtml }),
+      ...(d.embedHtml !== undefined && {
+        embedHtml: d.embedHtml != null ? sanitizeEmbed(d.embedHtml) : null,
+      }),
       ...(d.affectedCount !== undefined && { affectedCount: d.affectedCount }),
       ...(d.reportedAt !== undefined && { reportedAt: new Date(d.reportedAt) }),
       updatedAt: new Date(),

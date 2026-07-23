@@ -4,32 +4,41 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { events } from '@/lib/schema';
 import { desc } from 'drizzle-orm';
+import { sanitizeEmbed } from '@/lib/sanitize';
 
-const createSchema = z.object({
-  title: z.string().min(3).max(300),
-  description: z.string().optional(),
-  eventType: z.enum([
-    'glof',
-    'flood',
-    'landslide',
-    'infrastructure_damage',
-    'casualty',
-    'displacement',
-    'other',
-  ]),
-  severity: z.enum(['low', 'moderate', 'high', 'critical']).default('moderate'),
-  status: z.enum(['verified', 'unverified', 'disputed', 'archived']).default('unverified'),
-  district: z.string().optional(),
-  locationName: z.string().optional(),
-  latitude: z.number().min(-90).max(90).optional(),
-  longitude: z.number().min(-180).max(180).optional(),
-  sourceId: z.number().int().optional(),
-  sourceUrl: z.string().url().optional(),
-  sourcePostId: z.string().optional(),
-  embedHtml: z.string().optional(),
-  affectedCount: z.number().int().min(0).optional(),
-  reportedAt: z.string().datetime(),
-});
+const createSchema = z
+  .object({
+    title: z.string().min(3).max(300),
+    description: z.string().max(10_000).optional(),
+    eventType: z.enum([
+      'glof',
+      'flood',
+      'landslide',
+      'infrastructure_damage',
+      'casualty',
+      'displacement',
+      'other',
+    ]),
+    severity: z.enum(['low', 'moderate', 'high', 'critical']).default('moderate'),
+    status: z.enum(['verified', 'unverified', 'disputed', 'archived']).default('unverified'),
+    district: z.string().optional(),
+    locationName: z.string().optional(),
+    latitude: z.number().min(-90).max(90).optional(),
+    longitude: z.number().min(-180).max(180).optional(),
+    sourceId: z.number().int().optional(),
+    sourceUrl: z
+      .string()
+      .url()
+      .refine((url) => /^https?:\/\//i.test(url), 'Only http/https URLs allowed')
+      .optional(),
+    sourcePostId: z.string().optional(),
+    embedHtml: z.string().max(50_000).optional(),
+    affectedCount: z.number().int().min(0).optional(),
+    reportedAt: z.string().datetime(),
+  })
+  .refine((d) => (d.latitude == null) === (d.longitude == null), {
+    message: 'Provide both latitude and longitude, or neither',
+  });
 
 async function requireAdmin() {
   const session = await auth();
@@ -92,7 +101,7 @@ export async function POST(req: NextRequest) {
       sourceId: d.sourceId,
       sourceUrl: d.sourceUrl,
       sourcePostId: d.sourcePostId,
-      embedHtml: d.embedHtml,
+      embedHtml: d.embedHtml != null ? sanitizeEmbed(d.embedHtml) : undefined,
       affectedCount: d.affectedCount,
       reportedAt: new Date(d.reportedAt),
     })
