@@ -23,7 +23,7 @@ const SOURCES = [
     url: 'https://www.pmd.gov.pk',
     type: 'government' as const,
     description:
-      'Official weather and GLOF early warning authority. Scraped hourly for GB warnings.',
+      'Official weather and GLOF early warning authority. Referenced for manual event verification; direct scraping blocked by Cloudflare.',
   },
   {
     name: 'NDMA Pakistan',
@@ -31,14 +31,15 @@ const SOURCES = [
     url: 'https://ndma.gov.pk',
     type: 'government' as const,
     description:
-      'National Disaster Management Authority — publishes situation reports during emergencies.',
+      'National Disaster Management Authority — situation reports aggregated via ReliefWeb API.',
   },
   {
-    name: 'PDMA Gilgit-Baltistan',
-    slug: 'pdma-gb',
-    url: 'https://pdma.gob.pk',
-    type: 'government' as const,
-    description: 'Provincial Disaster Management Authority for Gilgit-Baltistan.',
+    name: 'GDACS',
+    slug: 'gdacs',
+    url: 'https://www.gdacs.org',
+    type: 'academic' as const,
+    description:
+      'UN Global Disaster Alert and Coordination System. Free public RSS feed, Pakistan-filtered. Covers significant floods and landslides.',
   },
   {
     name: 'ReliefWeb',

@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     'Every monsoon, glacial lake outburst floods, flash floods, and landslides devastate Gilgit-Baltistan. We aggregate verified reports on an interactive map to make the crisis visible.',
 };
 
-const SITE_URL = process.env.NEXTAUTH_URL ?? 'https://climate-gb.naseyou.nl';
+const SITE_URL = process.env.NEXTAUTH_URL ?? 'https://climate-gb.qalmaq.cloud';
 
 export default async function HomePage() {
   let stats = { total: 0, verified: 0, last30: 0 };

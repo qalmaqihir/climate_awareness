@@ -1,21 +1,18 @@
 /**
- * Scrapes NDMA/PDMA GB situation reports and upserts into alerts.
+ * Superseded by check-alerts.ts.
  *
- * TODO (Phase 1.E.3): NDMA publishes daily situation reports as PDFs.
- * Current approach: scrape the HTML situation report page for table rows.
+ * Previous targets:
+ *   - NDMA /public/situation-reports → 404 (dead path); now covered via ReliefWeb API
+ *   - pdma.gob.pk → Balochistan province, not GB; removed
+ *   - PMD /en/warnings/ → Cloudflare-blocked; removed
  *
- * Target: https://ndma.gov.pk/situation-reports/
- * Fallback: PMD warnings at https://www.pmd.gov.pk/en/warnings/
+ * GB-specific alerts now come from:
+ *   1. ReliefWeb API (aggregates NDMA/PMD situation reports)
+ *   2. Pamir Times RSS (https://www.pamirtimes.net/feed/)
+ *   3. GDACS RSS (https://www.gdacs.org/xml/rss.xml)
  *
- * Deduplication: by source_url. Skip if already exists.
+ * See check-alerts.ts for implementation.
  */
-import { db } from '../db.js';
-import { sql } from 'drizzle-orm';
-
 export async function checkPdmaAlerts() {
-  console.log('[pdma] Starting NDMA/PDMA alert check');
-
-  // Placeholder — full scraper in Phase 1.E.3
-  // Pattern: fetch HTML → Cheerio parse → extract alert rows → upsert
-  console.log('[pdma] Scraper not yet implemented — skipping');
+  // No-op — logic moved to checkAlerts() in check-alerts.ts
 }

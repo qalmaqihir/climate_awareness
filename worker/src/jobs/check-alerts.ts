@@ -1,7 +1,12 @@
 /**
- * Fetches GB-relevant alerts from two sources:
+ * Fetches GB-relevant alerts from three sources:
  *   1. ReliefWeb API — UN OCHA platform, aggregates Pakistan NDMA/PMD/PDMA reports (free JSON API)
- *   2. PMD warnings page — official GLOF/weather warnings (Cheerio HTML scrape)
+ *   2. Pamir Times RSS — leading English-language GB newspaper, real-time disaster coverage
+ *   3. GDACS RSS — UN global disaster alert system, Pakistan-filtered
+ *
+ * PMD removed: Cloudflare-blocked as of 2026.
+ * NDMA /public/situation-reports: 404 — covered via ReliefWeb instead.
+ * PDMA pdma.gob.pk: Balochistan province, not GB — removed.
  *
  * Deduplication: skip if source_url already exists in alerts table.
  * Runs every hour via cron in index.ts.
@@ -11,9 +16,11 @@ import { sql } from 'drizzle-orm';
 import { db } from '../db.js';
 
 const RELIEFWEB_URL = 'https://api.reliefweb.int/v1/reports';
-const PMD_WARNINGS_URL = 'https://www.pmd.gov.pk/en/warnings/';
+const PAMIR_TIMES_RSS = 'https://www.pamirtimes.net/feed/';
+const GDACS_RSS = 'https://www.gdacs.org/xml/rss.xml';
 
-// Keywords that indicate an alert is relevant to Gilgit-Baltistan
+const UA = 'Climate-Awareness-GB/1.0 (+https://climate-gb.qalmaq.cloud)';
+
 const GB_KEYWORDS = [
   'gilgit',
   'baltistan',
@@ -26,6 +33,11 @@ const GB_KEYWORDS = [
   'nagar',
   'ishkoman',
   'yasin',
+  'shigar',
+  'ghanche',
+  'kharmang',
+  'karakoram',
+  'pamir',
 ];
 
 function isGbRelevant(text: string): boolean {
@@ -33,11 +45,16 @@ function isGbRelevant(text: string): boolean {
   return GB_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
+function isPakistanRelevant(text: string): boolean {
+  return text.toLowerCase().includes('pakistan') || isGbRelevant(text);
+}
+
 function inferLevel(text: string): string {
   const lower = text.toLowerCase();
   if (lower.includes('emergency') || lower.includes('red alert') || lower.includes('catastrophic'))
     return 'emergency';
-  if (lower.includes('warning') || lower.includes('orange')) return 'warning';
+  if (lower.includes('warning') || lower.includes('orange') || lower.includes('glof'))
+    return 'warning';
   if (lower.includes('watch') || lower.includes('yellow')) return 'watch';
   return 'advisory';
 }
@@ -47,6 +64,7 @@ function inferAlertType(text: string): string {
   if (lower.includes('glof') || lower.includes('glacial lake')) return 'glof';
   if (lower.includes('flood')) return 'flood';
   if (lower.includes('landslide') || lower.includes('mudslide')) return 'landslide';
+  if (lower.includes('earthquake') || lower.includes('seismic')) return 'general';
   if (lower.includes('weather') || lower.includes('rain') || lower.includes('monsoon'))
     return 'weather';
   return 'general';
@@ -90,7 +108,7 @@ async function insertAlert(params: {
 
 // ─── ReliefWeb API ────────────────────────────────────────────────────────────
 
-async function scrapeReliefWeb(reliefwebSourceId: number | null) {
+async function scrapeReliefWeb(sourceId: number | null) {
   console.log('[alerts] Fetching ReliefWeb Pakistan disaster reports');
 
   const body = JSON.stringify({
@@ -114,7 +132,7 @@ async function scrapeReliefWeb(reliefwebSourceId: number | null) {
 
   const res = await fetch(`${RELIEFWEB_URL}?appname=climate-awareness-gb`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'User-Agent': UA },
     body,
     signal: AbortSignal.timeout(15000),
   });
@@ -146,7 +164,7 @@ async function scrapeReliefWeb(reliefwebSourceId: number | null) {
       alertType: inferAlertType(combined),
       level: inferLevel(combined),
       district: null,
-      sourceId: reliefwebSourceId,
+      sourceId,
       sourceUrl: url || null,
       issuedAt,
     });
@@ -156,85 +174,157 @@ async function scrapeReliefWeb(reliefwebSourceId: number | null) {
   console.log(`[alerts] ReliefWeb: ${inserted} new GB-relevant reports inserted`);
 }
 
-// ─── PMD Warnings Page ────────────────────────────────────────────────────────
+// ─── Pamir Times RSS ──────────────────────────────────────────────────────────
+// Leading English-language newspaper for Gilgit-Baltistan. Standard WordPress RSS.
 
-async function scrapePmd(pmdSourceId: number | null) {
-  console.log('[alerts] Fetching PMD warnings page');
+async function scrapePamirTimes(sourceId: number | null) {
+  console.log('[alerts] Fetching Pamir Times RSS');
 
-  const res = await fetch(PMD_WARNINGS_URL, {
-    headers: { 'User-Agent': 'Climate-Awareness-GB/1.0 (+https://climate-gb.naseyou.nl)' },
+  const res = await fetch(PAMIR_TIMES_RSS, {
+    headers: { 'User-Agent': UA },
     signal: AbortSignal.timeout(15000),
   });
 
   if (!res.ok) {
-    console.error(`[alerts] PMD HTTP ${res.status}`);
+    console.error(`[alerts] Pamir Times RSS HTTP ${res.status}`);
     return;
   }
 
-  const html = await res.text();
-  const $ = cheerio.load(html);
+  const xml = await res.text();
+  const $ = cheerio.load(xml, { xml: true });
+  const items = $('item').toArray();
+
+  // Only ingest disaster-relevant articles — skip unrelated news
+  const DISASTER_KEYWORDS = [
+    'flood',
+    'glof',
+    'glacial',
+    'landslide',
+    'mudslide',
+    'monsoon',
+    'emergency',
+    'disaster',
+    'rainfall',
+    'cloudburst',
+    'road blocked',
+    'bridge',
+    'casualties',
+    'ndma',
+    'pdma',
+    'pmd',
+    'warning',
+  ];
 
   let inserted = 0;
 
-  // PMD uses a WordPress-style listing — try multiple common selectors.
-  // Each candidate represents one warning entry on the page.
-  const candidates = $('article, .warning-entry, .alert-entry, .post, .entry').toArray();
-
-  for (const el of candidates) {
-    const titleEl = $(el).find('h1, h2, h3, h4, .title, .entry-title').first();
-    const title = titleEl.text().trim();
-    if (!title || title.length < 10) continue;
-
-    const bodyText = $(el)
-      .find('p, .content, .entry-content')
-      .map((_, p) => $(p).text().trim())
-      .toArray()
-      .join(' ')
+  for (const el of items) {
+    const title = $('title', el).first().text().trim();
+    const link = $('link', el).text().trim() || $('guid', el).text().trim();
+    const pubDateRaw = $('pubDate', el).text().trim();
+    const description = $('description', el)
+      .text()
+      .trim()
+      .replace(/<[^>]+>/g, ' ')
       .trim();
 
-    // Link — prefer anchor on title, fall back to any link in card
-    const rawHref =
-      titleEl.find('a').attr('href') ?? $(el).find('a[href]').first().attr('href') ?? '';
-    const sourceUrl = rawHref.startsWith('http')
-      ? rawHref
-      : rawHref
-        ? `https://www.pmd.gov.pk${rawHref}`
-        : null;
+    if (!title || title.length < 5) continue;
 
-    const dateAttr =
-      $(el).find('time[datetime]').attr('datetime') ??
-      $(el).find('[class*="date"]').first().text().trim();
-    const issuedAt = dateAttr ? new Date(dateAttr) : new Date();
-    const safeDate = isNaN(issuedAt.getTime()) ? new Date() : issuedAt;
+    const combined = (title + ' ' + description).toLowerCase();
 
-    const combined = title + ' ' + bodyText;
+    // Must mention GB region AND be disaster-related
     if (!isGbRelevant(combined)) continue;
+    if (!DISASTER_KEYWORDS.some((kw) => combined.includes(kw))) continue;
+
+    const sourceUrl = link || null;
     if (sourceUrl && (await alertExists(sourceUrl))) continue;
 
+    const issuedAt = pubDateRaw ? new Date(pubDateRaw) : new Date();
+    const safeDate = isNaN(issuedAt.getTime()) ? new Date() : issuedAt;
+
     await insertAlert({
-      title,
-      body: bodyText || title,
+      title: title.slice(0, 500),
+      body: description.slice(0, 3000) || title,
       alertType: inferAlertType(combined),
       level: inferLevel(combined),
       district: null,
-      sourceId: pmdSourceId,
+      sourceId,
       sourceUrl,
       issuedAt: safeDate,
     });
     inserted++;
   }
 
-  if (inserted === 0 && candidates.length === 0) {
-    // Page structure differs from expected — log a sample for debugging
-    console.warn(
-      '[alerts] PMD: no article/post elements found. First 500 chars:',
-      html.slice(0, 500),
-    );
-  } else {
-    console.log(
-      `[alerts] PMD: ${inserted} new GB-relevant warnings inserted (${candidates.length} candidates scanned)`,
-    );
+  console.log(
+    `[alerts] Pamir Times: ${inserted} new disaster alerts inserted (${items.length} items scanned)`,
+  );
+}
+
+// ─── GDACS RSS ────────────────────────────────────────────────────────────────
+// UN Global Disaster Alert and Coordination System. Free public RSS feed.
+// Covers Pakistan-level floods and landslides; filtered further for GB keywords.
+
+async function scrapeGDACS(sourceId: number | null) {
+  console.log('[alerts] Fetching GDACS RSS');
+
+  const res = await fetch(GDACS_RSS, {
+    headers: { 'User-Agent': UA },
+    signal: AbortSignal.timeout(20000),
+  });
+
+  if (!res.ok) {
+    console.error(`[alerts] GDACS RSS HTTP ${res.status}`);
+    return;
   }
+
+  const xml = await res.text();
+  const $ = cheerio.load(xml, { xml: true });
+  const items = $('item').toArray();
+
+  let inserted = 0;
+
+  for (const el of items) {
+    const title = $('title', el).first().text().trim();
+    const link = $('link', el).text().trim() || $('guid', el).text().trim();
+    const pubDateRaw = $('pubDate', el).text().trim();
+    const description = $('description', el)
+      .text()
+      .trim()
+      .replace(/<[^>]+>/g, ' ')
+      .trim();
+
+    if (!title || title.length < 5) continue;
+
+    const combined = title + ' ' + description;
+
+    // GDACS is global — only take Pakistan events, prefer GB-specific ones
+    if (!isPakistanRelevant(combined)) continue;
+
+    const sourceUrl = link || null;
+    if (sourceUrl && (await alertExists(sourceUrl))) continue;
+
+    const issuedAt = pubDateRaw ? new Date(pubDateRaw) : new Date();
+    const safeDate = isNaN(issuedAt.getTime()) ? new Date() : issuedAt;
+
+    // Boost level for GDACS: they only publish significant events
+    const baseLevel = inferLevel(combined);
+    const level = baseLevel === 'advisory' ? 'watch' : baseLevel;
+
+    await insertAlert({
+      title: title.slice(0, 500),
+      body: description.slice(0, 3000) || title,
+      alertType: inferAlertType(combined),
+      level,
+      district: null,
+      sourceId,
+      sourceUrl,
+      issuedAt: safeDate,
+    });
+    inserted++;
+  }
+
+  console.log(
+    `[alerts] GDACS: ${inserted} Pakistan/GB alerts inserted (${items.length} items scanned)`,
+  );
 }
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
@@ -242,16 +332,20 @@ async function scrapePmd(pmdSourceId: number | null) {
 export async function checkAlerts() {
   console.log('[alerts] Starting alert check');
 
-  const [reliefwebSourceId, pmdSourceId] = await Promise.all([
+  const [reliefwebSourceId, pamirTimesSourceId, gdacsSourceId] = await Promise.all([
     getSourceId('reliefweb'),
-    getSourceId('pmd'),
+    getSourceId('pamir-times'),
+    getSourceId('gdacs'),
   ]);
 
   await Promise.all([
     scrapeReliefWeb(reliefwebSourceId).catch((e) =>
       console.error('[alerts] ReliefWeb scraper error:', e),
     ),
-    scrapePmd(pmdSourceId).catch((e) => console.error('[alerts] PMD scraper error:', e)),
+    scrapePamirTimes(pamirTimesSourceId).catch((e) =>
+      console.error('[alerts] Pamir Times scraper error:', e),
+    ),
+    scrapeGDACS(gdacsSourceId).catch((e) => console.error('[alerts] GDACS scraper error:', e)),
   ]);
 
   console.log('[alerts] Alert check complete');

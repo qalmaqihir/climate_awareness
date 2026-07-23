@@ -138,7 +138,7 @@ export default async function EventDetailPage({ params }: Props) {
         <p className="mt-1">
           Data issue?{' '}
           <a
-            href="mailto:info@naseyou.nl?subject=Climate+GB+data+correction"
+            href="mailto:info@qalmaq.cloud?subject=Climate+GB+data+correction"
             className="text-teal-700 hover:underline"
           >
             Contact us

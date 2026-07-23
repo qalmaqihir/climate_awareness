@@ -63,7 +63,7 @@ export default async function AlertsPage() {
         Current alerts
       </h1>
       <p className="mt-2 text-slate-600">
-        Advisories from PMD, PDMA GB, and NDMA. Page refreshes on each visit.
+        Aggregated from ReliefWeb, Pamir Times, NDMA, PMD, and GDACS. Refreshes hourly.
       </p>
 
       {!hasAny && (
@@ -166,14 +166,25 @@ export default async function AlertsPage() {
         <ul className="mt-3 space-y-2 text-sm text-slate-600">
           {[
             {
-              name: 'PMD — Pakistan Meteorological Department',
-              url: 'https://www.pmd.gov.pk/en/warnings/',
+              name: 'ReliefWeb — UN OCHA Pakistan Disasters',
+              url: 'https://reliefweb.int/country/pak',
             },
             {
               name: 'NDMA Pakistan — Situation Reports',
-              url: 'https://ndma.gov.pk/situation-reports/',
+              url: 'https://ndma.gov.pk',
             },
-            { name: 'PDMA GB — Provincial Disaster Authority', url: 'https://pdma.gob.pk' },
+            {
+              name: 'PMD — Pakistan Meteorological Department',
+              url: 'https://www.pmd.gov.pk',
+            },
+            {
+              name: 'Pamir Times — GB Regional News',
+              url: 'https://www.pamirtimes.net',
+            },
+            {
+              name: 'GDACS — UN Global Disaster Alerts',
+              url: 'https://www.gdacs.org',
+            },
           ].map((s) => (
             <li key={s.url}>
               <a
@@ -191,7 +202,7 @@ export default async function AlertsPage() {
 
       <p className="mt-6 text-center text-xs text-slate-400">
         See something missing?{' '}
-        <a href="mailto:info@naseyou.nl" className="text-teal-700 hover:underline">
+        <a href="mailto:info@qalmaq.cloud" className="text-teal-700 hover:underline">
           Report it →
         </a>
       </p>

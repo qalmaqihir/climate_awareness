@@ -38,11 +38,11 @@ const ORGS = [
 ];
 
 const TWEET_TEXT = encodeURIComponent(
-  'Gilgit-Baltistan faces glacial lake outburst floods every monsoon — villages, bridges, and farmland destroyed. This site maps every verified event:\nhttps://climate-gb.naseyou.nl\n\n#GilgitBaltistan #GLOF #ClimateAction #Pakistan',
+  'Gilgit-Baltistan faces glacial lake outburst floods every monsoon — villages, bridges, and farmland destroyed. This site maps every verified event:\nhttps://climate-gb.qalmaq.cloud\n\n#GilgitBaltistan #GLOF #ClimateAction #Pakistan',
 );
 
 const WA_TEXT = encodeURIComponent(
-  'Every monsoon, glacial floods devastate Gilgit-Baltistan. This site tracks every verified event on an interactive map:\nhttps://climate-gb.naseyou.nl',
+  'Every monsoon, glacial floods devastate Gilgit-Baltistan. This site tracks every verified event on an interactive map:\nhttps://climate-gb.qalmaq.cloud',
 );
 
 export default function TakeActionPage() {
@@ -76,7 +76,7 @@ export default function TakeActionPage() {
           <p className="mt-2 text-sm text-slate-700 leading-relaxed font-mono">
             Gilgit-Baltistan faces glacial lake outburst floods every monsoon — villages, bridges,
             and farmland destroyed. This site maps every verified event:
-            https://climate-gb.naseyou.nl{'\n\n'}
+            https://climate-gb.qalmaq.cloud{'\n\n'}
             #GilgitBaltistan #GLOF #ClimateAction #Pakistan
           </p>
           <a
@@ -98,7 +98,7 @@ export default function TakeActionPage() {
           </p>
           <p className="mt-2 text-sm text-slate-700 leading-relaxed font-mono">
             Every monsoon, glacial floods devastate Gilgit-Baltistan. This site tracks every
-            verified event on an interactive map: https://climate-gb.naseyou.nl
+            verified event on an interactive map: https://climate-gb.qalmaq.cloud
           </p>
           <a
             href={`https://wa.me/?text=${WA_TEXT}`}
@@ -171,7 +171,7 @@ export default function TakeActionPage() {
           </a>
         </div>
         <p className="text-xs text-slate-500">
-          Please attribute as: <em>Climate Awareness GB (climate-gb.naseyou.nl)</em>
+          Please attribute as: <em>Climate Awareness GB (climate-gb.qalmaq.cloud)</em>
         </p>
         <p>
           If you are working on a story or research about GB&apos;s climate crisis and need
@@ -179,8 +179,11 @@ export default function TakeActionPage() {
           directly:
         </p>
         <p>
-          <a href="mailto:info@naseyou.nl" className="font-semibold text-teal-700 hover:underline">
-            info@naseyou.nl
+          <a
+            href="mailto:info@qalmaq.cloud"
+            className="font-semibold text-teal-700 hover:underline"
+          >
+            info@qalmaq.cloud
           </a>
         </p>
       </div>
@@ -191,8 +194,8 @@ export default function TakeActionPage() {
       </h2>
       <p className="mt-3 text-sm text-slate-600 leading-relaxed">
         If you spot a factual error, a missing event, or a source that should be removed, email{' '}
-        <a href="mailto:info@naseyou.nl" className="text-teal-700 hover:underline">
-          info@naseyou.nl
+        <a href="mailto:info@qalmaq.cloud" className="text-teal-700 hover:underline">
+          info@qalmaq.cloud
         </a>{' '}
         with the event ID and the correction. All corrections are reviewed before being applied.
       </p>

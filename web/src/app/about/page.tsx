@@ -28,9 +28,14 @@ const SOURCES = [
     type: 'Official — national disaster authority',
   },
   {
-    name: 'PDMA Gilgit-Baltistan',
-    url: 'https://pdma.gob.pk',
-    type: 'Official — provincial disaster authority',
+    name: 'NDMA Pakistan',
+    url: 'https://ndma.gov.pk',
+    type: 'Official — national disaster authority, covers GB provincial reports',
+  },
+  {
+    name: 'GDACS (UN)',
+    url: 'https://www.gdacs.org',
+    type: 'UN Global Disaster Alert and Coordination System — Pakistan floods/landslides',
   },
   {
     name: 'Aga Khan Agency for Habitat (AKAH)',
@@ -103,8 +108,8 @@ export default function AboutPage() {
         </p>
         <p className="mt-2">
           Contact:{' '}
-          <a href="mailto:info@naseyou.nl" className="text-teal-700 hover:underline">
-            info@naseyou.nl
+          <a href="mailto:info@qalmaq.cloud" className="text-teal-700 hover:underline">
+            info@qalmaq.cloud
           </a>
         </p>
       </div>
@@ -172,7 +177,7 @@ export default function AboutPage() {
         </a>
       </div>
       <p className="mt-3 text-xs text-slate-500">
-        Please attribute as: <em>Climate Awareness GB (climate-gb.naseyou.nl)</em>
+        Please attribute as: <em>Climate Awareness GB (climate-gb.qalmaq.cloud)</em>
       </p>
 
       {/* Roadmap */}

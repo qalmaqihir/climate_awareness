@@ -1,7 +1,7 @@
 import type { MetadataRoute } from 'next';
 import { getEvents } from '@/lib/queries';
 
-const BASE_URL = process.env.NEXTAUTH_URL ?? 'https://climate-gb.naseyou.nl';
+const BASE_URL = process.env.NEXTAUTH_URL ?? 'https://climate-gb.qalmaq.cloud';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticRoutes: MetadataRoute.Sitemap = [
