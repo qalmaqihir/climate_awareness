@@ -89,7 +89,10 @@ async function getSourceId(slug: string): Promise<number | null> {
 async function getExistingUrlSet(urls: string[]): Promise<Set<string>> {
   if (urls.length === 0) return new Set();
   const res = await db.execute(
-    sql`SELECT source_url FROM alerts WHERE source_url = ANY(${urls}::text[])`,
+    sql`SELECT source_url FROM alerts WHERE source_url = ANY(ARRAY[${sql.join(
+      urls.map((u) => sql`${u}`),
+      sql`, `,
+    )}])`,
   );
   return new Set(res.rows.map((r) => r.source_url as string));
 }
