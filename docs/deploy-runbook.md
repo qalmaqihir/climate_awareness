@@ -111,10 +111,21 @@ docker compose --profile tools run --rm tools pnpm db:seed
 #   Safe to re-run — skips existing records by source_url+title match
 docker compose --profile tools run --rm tools pnpm db:seed-events
 
+# Step 3b: Backfill reviewed coordinates onto the 22 seeded events
+#   Sets PostGIS location, precision, rationale; normalises flash_flood types;
+#   fixes Kharmang district error; sets state=resolved on all historical events.
+#   Safe to re-run — already-correct rows are skipped.
+docker compose --profile tools run --rm tools pnpm db:backfill-locations
+
 # Step 4: Verify data
 docker compose exec postgres psql -U climate_gb -d climate_gb \
   -c "SELECT count(*) total, count(embedding_v1) embedded FROM events WHERE status='verified';"
 # Expected: total=23, embedded=0  (worker embeds them in ~15 min)
+
+# Step 4b: Verify backfill applied coordinates
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "SELECT count(*) total, count(location) with_location, count(*) filter (where state='resolved') resolved FROM events WHERE status='verified';"
+# Expected: total=23 (or 22 if seed-events count differs), with_location=22, resolved=22
 
 # Step 5: Create admin user
 docker compose --profile tools run --rm tools \
@@ -176,6 +187,10 @@ docker compose --profile tools run --rm tools pnpm db:seed-events
 #     Run if fix-source-urls.ts changed in this release
 docker compose --profile tools build tools
 docker compose --profile tools run --rm tools pnpm db:fix-source-urls
+
+# 4c. Backfill reviewed coordinates onto seeded events (P0.2, idempotent)
+#     Run if seed-locations.ts or backfill-seed-locations.ts changed in this release
+docker compose --profile tools run --rm tools pnpm db:backfill-locations
 
 # 5. Rebuild and restart app containers
 docker compose --profile app up -d --build web worker

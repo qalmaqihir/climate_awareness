@@ -7,6 +7,9 @@ import { getEventById } from '@/lib/queries';
 import {
   EVENT_TYPE_COLORS,
   EVENT_TYPE_LABELS,
+  EVENT_SUBTYPE_LABELS,
+  INCIDENT_STATE_COLORS,
+  LOCATION_PRECISION_LABELS,
   SEVERITY_LABELS,
   SEVERITY_COLORS,
 } from '@/lib/constants';
@@ -61,6 +64,12 @@ export default async function EventDetailPage({ params }: Props) {
             style={{ backgroundColor: typeColor }}
           >
             {typeLabel}
+            {event.eventSubtype && (
+              <span className="font-normal opacity-90">
+                {' · '}
+                {EVENT_SUBTYPE_LABELS[event.eventSubtype] ?? event.eventSubtype}
+              </span>
+            )}
           </span>
           <span
             className="rounded-full px-3 py-1 text-xs font-semibold"
@@ -68,6 +77,17 @@ export default async function EventDetailPage({ params }: Props) {
           >
             {severityLabel} severity
           </span>
+          {event.state && (
+            <span
+              className="rounded-full px-3 py-1 text-xs font-semibold"
+              style={{
+                backgroundColor: event.state === 'active' ? '#fee2e2' : '#f1f5f9',
+                color: INCIDENT_STATE_COLORS[event.state] ?? '#6b7280',
+              }}
+            >
+              {event.state === 'active' ? 'Active' : 'Resolved'}
+            </span>
+          )}
           {event.status === 'verified' && (
             <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
               ✓ Verified
@@ -137,6 +157,12 @@ export default async function EventDetailPage({ params }: Props) {
           >
             Open in Google Maps ↗
           </a>
+          {event.locationPrecision && event.locationPrecision !== 'pending' && (
+            <p className="mt-1 text-xs text-slate-400">
+              Precision:{' '}
+              {LOCATION_PRECISION_LABELS[event.locationPrecision] ?? event.locationPrecision}
+            </p>
+          )}
         </div>
       )}
 

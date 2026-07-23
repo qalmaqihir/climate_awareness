@@ -175,7 +175,7 @@ const activeRingLayer: LayerProps = {
   filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', 'state'], 'active']],
   paint: {
     'circle-radius': ['+', SEVERITY_RADIUS_EXPR, PRECISION_RADIUS_BONUS_EXPR, 5],
-    'circle-color': 'transparent',
+    'circle-color': 'rgba(0,0,0,0)',
     'circle-stroke-width': 2,
     'circle-stroke-color': '#dc2626',
     'circle-opacity': 0,
@@ -329,9 +329,7 @@ export default function MapView() {
       return;
     }
 
-    const eventFeatures = map.queryRenderedFeatures(e.point, {
-      layers: ['events-unclustered', 'events-active-ring'],
-    });
+    const eventFeatures = map.queryRenderedFeatures(e.point, { layers: ['events-unclustered'] });
     if (eventFeatures.length > 0) {
       const f = eventFeatures[0];
       const coords = (f.geometry as Point).coordinates;
@@ -650,7 +648,7 @@ export default function MapView() {
           style={{ width: '100%', height: '100%' }}
           onClick={handleMapClick}
           cursor="pointer"
-          interactiveLayerIds={['events-clusters', 'events-unclustered', 'events-active-ring']}
+          interactiveLayerIds={['events-clusters', 'events-unclustered']}
         >
           <NavigationControl position="top-right" />
 

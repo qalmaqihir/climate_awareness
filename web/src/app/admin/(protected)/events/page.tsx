@@ -43,6 +43,7 @@ export default async function AdminEventsPage() {
                 <th className="px-4 py-3">Severity</th>
                 <th className="px-4 py-3">District</th>
                 <th className="px-4 py-3">Reported</th>
+                <th className="px-4 py-3">State</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3"></th>
               </tr>
@@ -65,6 +66,18 @@ export default async function AdminEventsPage() {
                   <td className="px-4 py-3 text-slate-600">{e.district ?? '—'}</td>
                   <td className="px-4 py-3 text-slate-500">
                     {format(e.reportedAt, 'MMM d, yyyy')}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={[
+                        'rounded px-1.5 py-0.5 text-[10px] font-semibold',
+                        e.state === 'active'
+                          ? 'bg-red-100 text-red-700'
+                          : 'bg-slate-100 text-slate-500',
+                      ].join(' ')}
+                    >
+                      {e.state ?? 'active'}
+                    </span>
                   </td>
                   <td className="px-4 py-3">
                     <span
