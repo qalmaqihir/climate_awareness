@@ -1,319 +1,616 @@
-# Deploy Runbook — Hostinger VPS
+# Deploy Runbook — Northern Pakistan Climate Watch
 
-Covers Phase 0 tasks 0.8 – 0.12. Run these on the VPS as the user with Docker + sudo access. Every command is idempotent unless flagged.
+**VPS project path:** `~/docker/apps/climate_awareness/climate_awareness/`
+**SSH:** `qalmaq@srv1322288`
+**Domain:** `climate-awareness-gbc.qalmaq.cloud`
 
-**Assumed already on VPS:** Docker Engine, Docker Compose v2, Nginx Proxy Manager (NPM), Cloudflare fronting VPS IP.
+All commands run from `~/docker/apps/climate_awareness/climate_awareness/` unless stated.
+Docker Compose profiles: `app` (web + worker) · `tools` (migrate / seed / admin CLI)
 
 ---
 
-## 0.8 — Provision project directory on VPS
+## Table of contents
+
+1. [First-time provisioning](#1-first-time-provisioning)
+2. [First full deploy](#2-first-full-deploy)
+3. [Code deployments (ongoing)](#3-code-deployments-ongoing)
+4. [Admin user management](#4-admin-user-management)
+5. [Seed data management](#5-seed-data-management)
+6. [Verification commands](#6-verification-commands)
+7. [Debug & troubleshooting](#7-debug--troubleshooting)
+8. [Backup & restore](#8-backup--restore)
+9. [Environment variables reference](#9-environment-variables-reference)
+10. [NPM + Cloudflare config](#10-npm--cloudflare-config)
+
+---
+
+## 1 — First-time provisioning
+
+Run once when setting up a new VPS. Skip on subsequent deploys.
 
 ```bash
-# SSH in
-ssh user@your-vps
+ssh qalmaq@srv1322288
 
 # Confirm Docker + Compose v2
 docker --version
-docker compose version    # must be v2.x, not v1 legacy
+docker compose version    # must be v2.x
 
-# Confirm existing services (know your neighbors)
+# Existing services
 docker ps
 docker network ls
 
 # Create project dir
-sudo mkdir -p /opt/climate-gb
-sudo chown "$USER":"$USER" /opt/climate-gb
-cd /opt/climate-gb
+mkdir -p ~/docker/apps/climate_awareness/climate_awareness
+cd ~/docker/apps/climate_awareness/climate_awareness
 
-# Clone repo (once GitHub remote exists; skip until then)
-# git clone git@github.com:<user>/climate-awareness-gb.git .
+# Transfer code from local machine (run on LOCAL laptop):
+# rsync -avz --exclude 'node_modules' --exclude '.next' --exclude '.git' \
+#   "/Users/jawadhaider/Climate Awareness/" \
+#   qalmaq@srv1322288:~/docker/apps/climate_awareness/climate_awareness/
 
-# For now: transfer files from local machine
-# From LOCAL laptop:
-#   rsync -avz --exclude 'node_modules' --exclude '.next' \
-#     "/Users/jawadhaider/Climate Awareness/" user@vps:/opt/climate-gb/
+# OR clone from GitHub (once remote exists):
+# git clone git@github.com:<user>/climate-awareness.git .
 ```
 
-**Sanity check:** `ls /opt/climate-gb` should show `docker-compose.yml`, `plan.md`, `README.md`, etc.
-
----
-
-## 0.9 — Configure `.env` and bring up Postgres + Redis
+### 1.1 — Create `.env`
 
 ```bash
-cd /opt/climate-gb
+cd ~/docker/apps/climate_awareness/climate_awareness
 
-# Copy template
 cp .env.example .env
+chmod 600 .env
 
-# Generate strong secrets
+# Generate secrets
 POSTGRES_PW=$(openssl rand -base64 32 | tr -d '/+=' | head -c 32)
 NEXTAUTH_SEC=$(openssl rand -base64 32)
 
-# Fill in .env (edit by hand or sed)
 sed -i "s|POSTGRES_PASSWORD=changeme|POSTGRES_PASSWORD=${POSTGRES_PW}|" .env
 sed -i "s|NEXTAUTH_SECRET=changeme|NEXTAUTH_SECRET=${NEXTAUTH_SEC}|" .env
+sed -i "s|NEXTAUTH_URL=.*|NEXTAUTH_URL=https://climate-awareness-gbc.qalmaq.cloud|" .env
+sed -i "s|ADMIN_EMAILS=.*|ADMIN_EMAILS=dev.qazxsw@gmail.com|" .env
 
-# NEXTAUTH_URL will be your final domain (Phase 0.11). For now leave default.
+# Fill in API keys by hand:
+nano .env
+# Required for RAG:  OPENROUTER_API_KEY=sk-or-...
+# Required for embeddings: JINA_API_KEY=jina_...
 
-# Lock down
-chmod 600 .env
+# Verify
+cat .env
+```
 
-# Bring up infra containers only (web/worker aren't built yet — Phase 1.A)
+### 1.2 — Start database and Redis
+
+```bash
 docker compose up -d postgres redis
 
-# Verify
+# Wait ~10s for healthchecks
 docker compose ps
-docker compose logs postgres | tail -30
-docker compose logs redis | tail -10
 
-# Confirm PostGIS ready
+# Confirm PostGIS
 docker compose exec postgres psql -U climate_gb -d climate_gb \
   -c "SELECT PostGIS_Version();"
-
-# Should print something like: 3.4 USE_GEOS=1 USE_PROJ=1 USE_STATS=1
-```
-
-**Sanity check:**
-
-- `docker compose ps` shows both containers healthy.
-- `PostGIS_Version()` returns a version.
-- Neither container is exposed to public (ports bound to `127.0.0.1`).
-
-**Rollback if broken:** `docker compose down -v` (destroys volumes — only use during initial setup, never after real data).
-
----
-
-## 0.10 — DNS + Nginx Proxy Manager
-
-**Cloudflare:**
-
-1. Add A record: `climate-gb.<yourdomain>` → VPS public IP.
-2. Proxy status: **Proxied** (orange cloud).
-3. SSL/TLS mode: **Full (strict)** since NPM will present a valid Let's Encrypt cert.
-
-**Nginx Proxy Manager UI:**
-
-1. Proxy Hosts → Add Proxy Host.
-   - Domain Names: `climate-gb.<yourdomain>`
-   - Scheme: `http`
-   - Forward Hostname / IP: `climate_web` (container name, resolves inside NPM's Docker network — see note below)
-   - Forward Port: `3000`
-   - Cache Assets: on
-   - Block Common Exploits: on
-   - Websockets Support: on
-2. SSL tab:
-   - SSL Certificate: request new Let's Encrypt cert
-   - Force SSL: on
-   - HTTP/2 Support: on
-   - HSTS Enabled: on
-3. Advanced tab (optional): add nginx snippet:
-   ```nginx
-   # Cloudflare real IP
-   set_real_ip_from 173.245.48.0/20;
-   set_real_ip_from 103.21.244.0/22;
-   # ... (full list from https://www.cloudflare.com/ips-v4)
-   real_ip_header CF-Connecting-IP;
-
-   # Bypass cache for admin + api
-   location ~ ^/(admin|api)/ {
-     add_header Cache-Control "no-store";
-   }
-   ```
-
-**Network note:** NPM must share a Docker network with `climate_web`. Two options:
-
-- **Option A (recommended):** Attach NPM to `climate_net`:
-
-  ```bash
-  docker network connect climate_net <npm-container-name>
-  ```
-
-  Then in NPM use `climate_web:3000` as the forward host.
-
-- **Option B:** Bind `web` to VPS host `127.0.0.1:3000` (already done in compose), then in NPM use `127.0.0.1:3000` as forward host. Works if NPM runs on host network.
-
-Pick whichever matches your existing NPM setup.
-
-**Cloudflare page rules (recommended):**
-
-- `climate-gb.<yourdomain>/api/*` → Cache Level: Bypass
-- `climate-gb.<yourdomain>/admin/*` → Cache Level: Bypass, Security Level: High
-- Everything else → default Cloudflare caching
-
----
-
-## 0.11 — Domain choice
-
-Options ranked by cost / signal:
-
-| Option                                | Cost                                         | Notes                                   |
-| ------------------------------------- | -------------------------------------------- | --------------------------------------- |
-| `climate-gb.<yourdomain>` (subdomain) | $0                                           | Fastest. Uses domain you already own.   |
-| `climate-gb.org`                      | ~$12/yr                                      | Signals non-profit purpose.             |
-| `gbclimate.org`                       | ~$12/yr                                      | Shorter.                                |
-| `.pk` domain                          | Restricted, ~$40/yr, requires local presence | Signals authenticity; slower to obtain. |
-
-**Recommendation:** start with a subdomain on a domain you already own. Move to a dedicated domain after v1 traction proves the project has legs.
-
-Once chosen, update `.env` on VPS:
-
-```bash
-sed -i "s|NEXTAUTH_URL=.*|NEXTAUTH_URL=https://climate-gb.<yourdomain>|" .env
+# Expected: 3.4 USE_GEOS=1 ...
 ```
 
 ---
 
-## 0.12 — Nightly Postgres backup → offsite
+## 2 — First full deploy
 
-**Choose destination first** — Backblaze B2 (10 GB free) or Cloudflare R2 (10 GB free). B2 has simpler CLI; R2 is S3-compatible.
-
-### Backup script
-
-`bin/pg-backup.sh` (also part of the repo, executable):
+Run after provisioning OR after a database wipe. Order matters.
 
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
+cd ~/docker/apps/climate_awareness/climate_awareness
 
-BACKUP_DIR="/opt/climate-gb/db/backups"
-STAMP=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-DUMP="${BACKUP_DIR}/climate_gb_${STAMP}.sql.gz"
+# Step 1: Run all DB migrations
+docker compose --profile tools run --rm --build tools pnpm db:migrate
 
-mkdir -p "$BACKUP_DIR"
+# Step 2: Seed monitored sources (PDMA, ICIMOD, Pamir Times, etc.)
+docker compose --profile tools run --rm tools pnpm db:seed
 
-# Dump inside the running container, gzip on the way out
-docker compose -f /opt/climate-gb/docker-compose.yml exec -T postgres \
-  pg_dump -U climate_gb -d climate_gb --format=plain --no-owner \
-  | gzip > "$DUMP"
+# Step 3: Seed 23 verified historical events (2021–2024)
+#   Safe to re-run — skips existing records by source_url+title match
+docker compose --profile tools run --rm tools pnpm db:seed-events
 
-# Upload to Backblaze B2 (requires `rclone` configured with remote named `b2`)
-rclone copy "$DUMP" b2:climate-gb-backups/ --progress
+# Step 4: Verify data
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "SELECT count(*) total, count(embedding_v1) embedded FROM events WHERE status='verified';"
+# Expected: total=23, embedded=0  (worker embeds them in ~15 min)
 
-# Prune local dumps older than 7 days
-find "$BACKUP_DIR" -name '*.sql.gz' -mtime +7 -delete
+# Step 5: Create admin user
+docker compose --profile tools run --rm tools \
+  pnpm admin:create dev.qazxsw@gmail.com 'YourStrongPassword'
 
-# Prune remote dumps older than 90 days (adjust to your retention policy)
-rclone delete b2:climate-gb-backups/ --min-age 90d
+# Step 6: Start web + worker
+docker compose --profile app up -d --build web worker
+
+# Step 7: Watch logs
+docker compose logs -f web worker
 ```
 
-### Install
+**Wait ~15 minutes** for the embedding worker to generate vectors for all seeded events.
+Check progress:
 
 ```bash
-# One-time rclone setup (interactive)
-sudo apt-get install -y rclone
-rclone config    # add remote named 'b2', type 'b2', paste key id + app key
-
-# Make script executable
-chmod +x /opt/climate-gb/bin/pg-backup.sh
-
-# Test manually
-/opt/climate-gb/bin/pg-backup.sh
-ls -lh /opt/climate-gb/db/backups/
-rclone ls b2:climate-gb-backups/
-
-# Add cron: every day at 03:15 UTC
-( crontab -l 2>/dev/null; echo "15 3 * * * /opt/climate-gb/bin/pg-backup.sh >> /var/log/climate-backup.log 2>&1" ) | crontab -
-
-# Verify
-crontab -l
+docker compose logs worker | grep embed
+# Expected sequence:
+#   [embed] Indexing 23 events
+#   [embed] Batch 1: 10 events embedded
+#   [embed] Batch 2: 10 events embedded
+#   [embed] Batch 3: 3 events embedded
+#   [embed] Done — 23 events indexed
 ```
 
-### Restore drill (run once to confirm backups are real)
+Then verify embeddings complete:
 
 ```bash
-# Download latest
-rclone copy b2:climate-gb-backups/climate_gb_<STAMP>.sql.gz /tmp/
-
-# Restore into a scratch DB
-docker compose exec postgres createdb -U climate_gb climate_gb_restore_test
-gunzip -c /tmp/climate_gb_<STAMP>.sql.gz | \
-  docker compose exec -T postgres psql -U climate_gb -d climate_gb_restore_test
-
-# Verify tables exist
-docker compose exec postgres psql -U climate_gb -d climate_gb_restore_test -c "\dt"
-
-# Cleanup
-docker compose exec postgres dropdb -U climate_gb climate_gb_restore_test
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "SELECT count(*) total, count(embedding_v1) embedded FROM events WHERE status='verified';"
+# Expected: total=23, embedded=23
 ```
-
-**Do this restore drill at least once per quarter.** Untested backups are not backups.
 
 ---
 
-## Post-provisioning checklist
+## 3 — Code deployments (ongoing)
 
-- [ ] `.env` on VPS has strong `POSTGRES_PASSWORD` + `NEXTAUTH_SECRET`, mode 600.
-- [ ] `docker compose ps` shows `postgres` + `redis` healthy.
-- [ ] `PostGIS_Version()` returns a value.
-- [ ] Cloudflare A record proxied, DNS resolves to VPS IP.
-- [ ] NPM proxy host serves `https://climate-gb.<domain>` (may show 502 until Phase 1.A deploys `web`).
-- [ ] `bin/pg-backup.sh` ran successfully, dump visible in B2/R2.
-- [ ] Cron installed, `crontab -l` shows entry.
-- [ ] Restore drill completed once.
-
-When all boxes ticked, mark Phase 0 tasks 0.8 – 0.12 ✅ in `plan.md` and start Phase 1.A.
-
----
-
-## Code deployments (ongoing — run on every push to main)
+Run on every push to `main`. Order matters.
 
 ```bash
-cd /opt/climate-gb
+cd ~/docker/apps/climate_awareness/climate_awareness
 
 # 1. Pull latest code
 git pull origin main
 
 # 2. Run pending DB migrations
-#    --build is required: migration SQL files are baked into the image.
-#    Without it, Docker uses a cached image that may contain old migration files.
+#    --build required: migration SQL is baked into the image
 docker compose --profile tools run --rm --build tools pnpm db:migrate
 
-# 3. Rebuild and restart app containers (zero-downtime via Docker restart policy)
-#    --profile app is required: web and worker are behind the 'app' profile.
+# 3. Re-seed sources if seed-sources.ts changed in this release
+#    Safe to re-run — skips existing slugs
+docker compose --profile tools run --rm tools pnpm db:seed
+
+# 4. Re-seed events if seed-events.ts changed in this release
+#    Safe to re-run — skips existing titles
+docker compose --profile tools run --rm tools pnpm db:seed-events
+
+# 4b. Fix broken source URLs on existing events (one-time, idempotent)
+#     Run if fix-source-urls.ts changed in this release
+docker compose --profile tools build tools
+docker compose --profile tools run --rm tools pnpm db:fix-source-urls
+
+# 5. Rebuild and restart app containers
 docker compose --profile app up -d --build web worker
 
-# 4. Verify
+# 6. Verify
 docker compose ps
 docker compose logs web   --tail 30
 docker compose logs worker --tail 30
 ```
 
-**Migration notes:**
-
-- `docker compose --profile tools run --rm --build tools pnpm db:migrate` runs `scripts/migrate.ts` against `DATABASE_URL`.
-  Never apply `.sql` files by hand — let Drizzle track migration state.
-- If the `tools` service exits non-zero, fix the migration before restarting `web`/`worker`.
-- New indexes (e.g. `0003_steady_black_queen.sql`) are non-destructive — safe to apply
-  on a live DB. Postgres adds them without locking reads.
+> **When to run seed steps:** Only run 3 and 4 if the release notes say seed files changed.
+> Always safe to run them (idempotent), so when in doubt — run them.
 
 ---
 
-## Environment variables — deployment notes
+## 4 — Admin user management
 
-| Variable             | Source                                                 | Notes                                                                                               |
-| -------------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| `POSTGRES_PASSWORD`  | `.env`                                                 | Generated at provision time                                                                         |
-| `NEXTAUTH_SECRET`    | `.env`                                                 | Used by NextAuth for JWT signing                                                                    |
-| `AUTH_SECRET`        | derived in `docker-compose.yml` from `NEXTAUTH_SECRET` | NextAuth v5 reads `AUTH_SECRET`, not `NEXTAUTH_SECRET`; compose maps it — **do not set separately** |
-| `OPENROUTER_API_KEY` | `.env`                                                 | Required for RAG agent                                                                              |
-| `JINA_API_KEY`       | `.env`                                                 | Required for embedding worker                                                                       |
-| `BLOCKED_IPS`        | `.env` (optional)                                      | Comma-separated IPs to permanently block at middleware                                              |
+Both conditions must be true for admin login to work:
+
+- User exists in DB
+- Email is in `ADMIN_EMAILS` in `.env`
+
+```bash
+cd ~/docker/apps/climate_awareness/climate_awareness
+
+# Create or update admin user
+docker compose --profile tools run --rm --build tools \
+  pnpm admin:create dev.qazxsw@gmail.com 'YourStrongPassword'
+
+# Verify ADMIN_EMAILS is set
+grep ADMIN_EMAILS .env
+
+# Fix if wrong
+sed -i "s|ADMIN_EMAILS=.*|ADMIN_EMAILS=dev.qazxsw@gmail.com|" .env
+
+# Restart web to pick up .env change
+docker compose --profile app up -d web
+
+# Test: visit https://climate-awareness-gbc.qalmaq.cloud/admin/login
+```
 
 ---
 
-## Nginx Proxy Manager — real-IP header (required for IP blocking)
+## 5 — Seed data management
 
-The middleware reads `x-forwarded-for` to enforce `BLOCKED_IPS` and rate limiting.
-Without forwarding the real client IP, all requests appear to come from Cloudflare's
-edge IPs — the block list is effectively disabled.
+### Seed sources (news sources, PDMA, etc.)
 
-**This nginx snippet is required, not optional.** Add it to the NPM Advanced tab for
-the proxy host:
+```bash
+docker compose --profile tools run --rm tools pnpm db:seed
+```
+
+Idempotent — skips existing slugs. Add new sources to `web/scripts/seed-sources.ts`, then re-run.
+
+### Seed historical events
+
+```bash
+docker compose --profile tools run --rm tools pnpm db:seed-events
+```
+
+Idempotent — skips records where `title` already exists.
+Add new events to `web/scripts/seed-events.ts`, then re-run.
+
+### Fix broken source URLs on existing events
+
+```bash
+docker compose --profile tools build tools
+docker compose --profile tools run --rm tools pnpm db:fix-source-urls
+```
+
+Idempotent — skips events whose source URL is already correct.
+Run after `fix-source-urls.ts` changes or whenever source links need patching.
+
+**After seeding new events, embeddings generate automatically within 15 min.**
+Watch the worker:
+
+```bash
+docker compose logs -f worker | grep embed
+```
+
+### Manually trigger embedding (skip 15-min wait)
+
+```bash
+docker compose restart worker
+# Worker runs embed job on startup, then every 15 min
+docker compose logs -f worker | grep embed
+```
+
+---
+
+## 6 — Verification commands
+
+### Container health
+
+```bash
+# All containers status
+docker compose ps
+
+# Individual health
+docker inspect climate_postgres --format '{{.State.Health.Status}}'
+docker inspect climate_web      --format '{{.State.Health.Status}}'
+```
+
+### Database checks
+
+```bash
+# Event counts
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "SELECT count(*) total, count(embedding_v1) embedded FROM events WHERE status='verified';"
+
+# Events by district
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "SELECT district, count(*) FROM events WHERE status='verified' GROUP BY district ORDER BY count DESC;"
+
+# Events by type
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "SELECT event_type, count(*) FROM events WHERE status='verified' GROUP BY event_type ORDER BY count DESC;"
+
+# Recent events
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "SELECT id, title, district, status, embedding_v1 IS NOT NULL AS embedded FROM events ORDER BY created_at DESC LIMIT 10;"
+
+# Sources
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "SELECT slug, name, status FROM sources ORDER BY slug;"
+
+# Admin users
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "SELECT email, is_admin FROM \"user\" WHERE is_admin = true;"
+
+# Active alerts
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "SELECT id, title, level, district, is_active, expires_at FROM alerts ORDER BY issued_at DESC LIMIT 10;"
+
+# RAG query log (last 20 queries)
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "SELECT id, doc_count, model_used, duration_ms, blocked, created_at FROM query_logs ORDER BY created_at DESC LIMIT 20;"
+
+# Migrations applied
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "SELECT * FROM drizzle.__drizzle_migrations ORDER BY created_at;"
+```
+
+### API health checks
+
+```bash
+# App is up
+curl -s -o /dev/null -w "%{http_code}" https://climate-awareness-gbc.qalmaq.cloud/
+# Expected: 200
+
+# RAG API — should return SSE stream
+curl -s -N -X POST https://climate-awareness-gbc.qalmaq.cloud/api/agent/query \
+  -H "Content-Type: application/json" \
+  -d '{"query":"What GLOF events happened in Hunza?"}' | head -20
+# Expected: data: {"type":"token","content":"..."} lines, then citations, then done
+
+# RAG blocked query test
+curl -s -N -X POST https://climate-awareness-gbc.qalmaq.cloud/api/agent/query \
+  -H "Content-Type: application/json" \
+  -d '{"query":"What is PTI doing about floods?"}' | head -5
+# Expected: data: {"type":"blocked","message":"..."}
+
+# Events API
+curl -s "https://climate-awareness-gbc.qalmaq.cloud/api/events?limit=5" | head -200
+
+# Rate limit test (21 requests → 21st should be 429)
+for i in $(seq 1 21); do
+  code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+    https://climate-awareness-gbc.qalmaq.cloud/api/agent/query \
+    -H "Content-Type: application/json" \
+    -d '{"query":"flood"}')
+  echo "Request $i: $code"
+done
+```
+
+### Env var check
+
+```bash
+# Verify all required keys are set
+grep -E "POSTGRES_PASSWORD|NEXTAUTH_SECRET|NEXTAUTH_URL|ADMIN_EMAILS|OPENROUTER_API_KEY|JINA_API_KEY" .env
+```
+
+---
+
+## 7 — Debug & troubleshooting
+
+### RAG citations not showing
+
+```bash
+# 1. Check event count
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "SELECT count(*) total, count(embedding_v1) embedded FROM events WHERE status='verified';"
+
+# If total=0 → events not seeded → run §5 seed commands
+# If embedded=0 → embeddings missing → check below
+
+# 2. Check JINA_API_KEY
+grep JINA_API_KEY .env
+
+# 3. Check worker embed logs
+docker compose logs worker | grep -i embed
+# "JINA_API_KEY not set — skipping" → key missing in .env → add it, restart worker
+# "All verified events are indexed" + embedded=0 → 0 unembedded events (contradicts total)
+# "Indexing N events" → actively embedding
+
+# 4. Force embed run
+docker compose restart worker
+docker compose logs -f worker | grep embed
+
+# 5. Confirm embeddings after worker run
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "SELECT count(embedding_v1) FROM events WHERE status='verified';"
+```
+
+**Good questions to test citations (all have seed data):**
+
+- `What GLOF events happened in Hunza?`
+- `How many people were affected by floods in Diamer?`
+- `Tell me about Nagar valley glacier outbursts`
+- `What landslides blocked the Karakoram Highway?`
+- `Which districts had critical severity events?`
+- `What happened in Astore district floods?`
+- `What flash floods damaged infrastructure in Skardu?`
+
+### RAG returns "no relevant events found"
+
+```bash
+# Check OPENROUTER_API_KEY
+grep OPENROUTER_API_KEY .env
+
+# Test OpenRouter directly
+curl -s https://openrouter.ai/api/v1/chat/completions \
+  -H "Authorization: Bearer $(grep OPENROUTER_API_KEY .env | cut -d= -f2)" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"google/gemma-4-26b-a4b-it:free","messages":[{"role":"user","content":"Reply: OK"}],"max_tokens":5}' | grep -o '"content":"[^"]*"'
+
+# Check web logs for errors during RAG call
+docker compose logs web --tail 50 | grep -i "error\|embed\|agent"
+```
+
+### Web container not starting
+
+```bash
+docker compose logs web --tail 50
+
+# Common causes:
+# "NEXTAUTH_URL is required" → missing in .env
+# "NEXTAUTH_SECRET is required" → missing in .env
+# "connect ECONNREFUSED" → postgres not healthy yet
+
+# Check postgres health
+docker compose ps postgres
+docker compose logs postgres --tail 20
+```
+
+### Worker not running
+
+```bash
+docker compose ps worker
+docker compose logs worker --tail 50
+
+# Restart
+docker compose --profile app up -d worker
+
+# Worker job schedule (from logs)
+# Startup: migrations check, embed run, weather refresh, alert check
+# Every 15min: embed job
+# Every 30min: weather refresh
+# Every 60min: alert check, PDMA check
+# Daily: cleanup (old query_logs, weather snapshots)
+```
+
+### Database connection issues
+
+```bash
+# Test connection from web container
+docker compose exec web wget -qO- http://localhost:3000/api/events?limit=1
+
+# Test direct DB connection
+docker compose exec postgres psql -U climate_gb -d climate_gb -c "\conninfo"
+
+# Check pg_data volume is intact
+docker volume inspect climate_awareness_pg_data
+```
+
+### Migrations failed
+
+```bash
+# Check migration state
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "SELECT * FROM drizzle.__drizzle_migrations ORDER BY created_at;"
+
+# Re-run migration (idempotent if files use IF NOT EXISTS)
+docker compose --profile tools run --rm --build tools pnpm db:migrate
+
+# If migration table doesn't exist (fresh DB):
+docker compose --profile tools run --rm --build tools pnpm db:migrate
+# Drizzle creates __drizzle_migrations automatically on first run
+```
+
+### Container logs shortcuts
+
+```bash
+# All logs
+docker compose logs -f
+
+# Specific containers
+docker compose logs -f web
+docker compose logs -f worker
+docker compose logs -f postgres
+
+# Last N lines
+docker compose logs web --tail 100
+docker compose logs worker --tail 100
+
+# Errors only
+docker compose logs web 2>&1 | grep -i error
+docker compose logs worker 2>&1 | grep -i error
+```
+
+### Disk and resource check
+
+```bash
+# Disk usage
+df -h
+docker system df
+
+# Container resource usage
+docker stats --no-stream
+
+# Volume sizes
+docker system df -v | grep climate
+```
+
+---
+
+## 8 — Backup & restore
+
+### Manual backup (run anytime)
+
+```bash
+STAMP=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+DUMP=~/backups/climate_gb_${STAMP}.sql.gz
+mkdir -p ~/backups
+
+docker compose exec -T postgres \
+  pg_dump -U climate_gb -d climate_gb --format=plain --no-owner \
+  | gzip > "$DUMP"
+
+echo "Backup: $DUMP ($(du -sh $DUMP | cut -f1))"
+```
+
+### Automated nightly backup (`bin/pg-backup.sh`)
+
+```bash
+# Make executable
+chmod +x bin/pg-backup.sh
+
+# Test manually
+./bin/pg-backup.sh
+
+# Install cron: 03:15 UTC daily
+( crontab -l 2>/dev/null; \
+  echo "15 3 * * * ~/docker/apps/climate_awareness/climate_awareness/bin/pg-backup.sh >> /var/log/climate-backup.log 2>&1" \
+) | crontab -
+
+crontab -l
+```
+
+### Restore from backup
+
+```bash
+# Stop web/worker (keep postgres running)
+docker compose --profile app stop web worker
+
+# Restore
+gunzip -c ~/backups/climate_gb_<STAMP>.sql.gz | \
+  docker compose exec -T postgres psql -U climate_gb -d climate_gb
+
+# Restart
+docker compose --profile app up -d web worker
+
+# Verify
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "SELECT count(*) FROM events;"
+```
+
+> **Never run `docker compose down -v`** after real data exists. `-v` destroys `pg_data`.
+
+---
+
+## 9 — Environment variables reference
+
+All vars live in `.env` at project root. Mode 600.
+
+| Variable             | Required | Default      | Notes                                                                             |
+| -------------------- | -------- | ------------ | --------------------------------------------------------------------------------- |
+| `POSTGRES_PASSWORD`  | ✅       | —            | Generate: `openssl rand -base64 32`                                               |
+| `NEXTAUTH_URL`       | ✅       | —            | `https://climate-awareness-gbc.qalmaq.cloud`                                      |
+| `NEXTAUTH_SECRET`    | ✅       | —            | Generate: `openssl rand -base64 32`                                               |
+| `AUTH_SECRET`        | auto     | —            | Set by compose from `NEXTAUTH_SECRET`. Do not set manually.                       |
+| `ADMIN_EMAILS`       | ✅       | —            | `dev.qazxsw@gmail.com` (comma-separated for multiple)                             |
+| `OPENROUTER_API_KEY` | ✅ RAG   | —            | Free tier available. RAG AI disabled without this.                                |
+| `JINA_API_KEY`       | ✅ RAG   | —            | Free 1M tokens/day. Embeddings disabled without this — citations will not appear. |
+| `POSTGRES_DB`        | ✗        | `climate_gb` |                                                                                   |
+| `POSTGRES_USER`      | ✗        | `climate_gb` |                                                                                   |
+| `BLOCKED_IPS`        | ✗        | —            | Comma-separated IPs blocked at middleware                                         |
+| `AGENT_RATE_LIMIT`   | ✗        | `20`         | Max RAG questions per IP per day                                                  |
+
+### Update a var after first deploy
+
+```bash
+nano .env                         # edit
+docker compose --profile app up -d web worker   # restart to apply
+```
+
+---
+
+## 10 — NPM + Cloudflare config
+
+### Nginx Proxy Manager
+
+Proxy Host settings:
+
+- Domain: `climate-awareness-gbc.qalmaq.cloud`
+- Forward: `climate_web:3000` (container must be on `climate_net`)
+- SSL: Let's Encrypt, Force SSL on
+
+```bash
+# Attach NPM container to climate_net (one-time)
+docker network connect climate_net <npm-container-name>
+```
+
+Advanced tab nginx snippet (required for real-IP and rate limiting):
 
 ```nginx
-# Restore real client IP from Cloudflare
-# Full list: https://www.cloudflare.com/ips-v4 (update when Cloudflare publishes new ranges)
 set_real_ip_from 173.245.48.0/20;
 set_real_ip_from 103.21.244.0/22;
 set_real_ip_from 103.22.200.0/22;
@@ -331,11 +628,17 @@ set_real_ip_from 172.64.0.0/13;
 set_real_ip_from 131.0.72.0/22;
 real_ip_header CF-Connecting-IP;
 
-# Bypass cache for admin + api routes
 location ~ ^/(admin|api)/ {
   add_header Cache-Control "no-store";
 }
 ```
 
-Without this, `BLOCKED_IPS` in `.env` blocks Cloudflare's own IPs and breaks the site
-for all visitors.
+Without the `set_real_ip_from` block, `BLOCKED_IPS` and rate limiting see Cloudflare IPs, not real visitor IPs.
+
+### Cloudflare
+
+- A record: `climate-awareness-gbc.qalmaq.cloud` → VPS public IP, **Proxied**
+- SSL/TLS mode: **Full (strict)**
+- Page rules:
+  - `*/api/*` → Cache Level: Bypass
+  - `*/admin/*` → Cache Level: Bypass
