@@ -1,0 +1,150 @@
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
+import { format } from 'date-fns';
+import { getEventById } from '@/lib/queries';
+import {
+  EVENT_TYPE_COLORS,
+  EVENT_TYPE_LABELS,
+  SEVERITY_LABELS,
+  SEVERITY_COLORS,
+} from '@/lib/constants';
+
+type Props = { params: Promise<{ id: string }> };
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { id } = await params;
+  const event = await getEventById(parseInt(id));
+  if (!event) return { title: 'Event not found' };
+  return {
+    title: event.title,
+    description:
+      event.description ??
+      `${EVENT_TYPE_LABELS[event.eventType]} in ${event.district ?? 'Gilgit-Baltistan'}`,
+  };
+}
+
+export default async function EventDetailPage({ params }: Props) {
+  const { id } = await params;
+  const event = await getEventById(parseInt(id));
+
+  if (!event) notFound();
+
+  const typeColor = EVENT_TYPE_COLORS[event.eventType] ?? '#6b7280';
+  const typeLabel = EVENT_TYPE_LABELS[event.eventType] ?? event.eventType;
+  const severityLabel = SEVERITY_LABELS[event.severity] ?? event.severity;
+  const severityColor = SEVERITY_COLORS[event.severity] ?? '#6b7280';
+
+  return (
+    <div className="mx-auto max-w-2xl px-4 py-10">
+      {/* Back */}
+      <Link
+        href="/map"
+        className="mb-6 inline-flex items-center gap-1 text-sm text-teal-700 hover:underline"
+      >
+        ← Back to map
+      </Link>
+
+      {/* Header */}
+      <div className="mb-6">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold text-white"
+            style={{ backgroundColor: typeColor }}
+          >
+            {typeLabel}
+          </span>
+          <span
+            className="rounded-full px-3 py-1 text-xs font-semibold"
+            style={{ backgroundColor: `${severityColor}22`, color: severityColor }}
+          >
+            {severityLabel} severity
+          </span>
+          {event.status === 'verified' && (
+            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+              ✓ Verified
+            </span>
+          )}
+        </div>
+
+        <h1 className="text-2xl font-bold leading-snug text-slate-900">{event.title}</h1>
+
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-500">
+          {(event.locationName ?? event.district) && (
+            <span>📍 {event.locationName ?? event.district}</span>
+          )}
+          <span>🕐 Reported {format(event.reportedAt, 'MMMM d, yyyy')}</span>
+          {event.affectedCount != null && (
+            <span>👥 {event.affectedCount.toLocaleString()} affected</span>
+          )}
+        </div>
+      </div>
+
+      {/* Description */}
+      {event.description && (
+        <p className="mb-6 text-base leading-relaxed text-slate-700">{event.description}</p>
+      )}
+
+      {/* oEmbed */}
+      {event.embedHtml && (
+        <div className="mb-6 overflow-hidden rounded-xl border border-slate-200 bg-white p-4">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+            Source post
+          </p>
+          {/* oEmbed HTML from verified sources — markup trusted */}
+          <div className="oembed-container" dangerouslySetInnerHTML={{ __html: event.embedHtml }} />
+        </div>
+      )}
+
+      {/* Source link */}
+      {event.sourceUrl && (
+        <div className="mb-6">
+          <a
+            href={event.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            View original source ↗
+          </a>
+        </div>
+      )}
+
+      {/* Location coords */}
+      {event.latitude != null && event.longitude != null && (
+        <div className="mb-6 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          <span className="font-medium">Coordinates:</span> {event.latitude.toFixed(5)}°N,{' '}
+          {event.longitude.toFixed(5)}°E
+          {' · '}
+          <a
+            href={`https://www.google.com/maps?q=${event.latitude},${event.longitude}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-teal-700 hover:underline"
+          >
+            Open in Google Maps ↗
+          </a>
+        </div>
+      )}
+
+      {/* Verification info */}
+      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
+        <p>
+          Added {format(event.createdAt, "MMM d, yyyy 'at' HH:mm 'UTC'")} ·{' '}
+          {event.verifiedAt
+            ? `Verified ${format(event.verifiedAt, 'MMM d, yyyy')}`
+            : 'Pending verification'}
+        </p>
+        <p className="mt-1">
+          Data issue?{' '}
+          <a
+            href="mailto:info@naseyou.nl?subject=Climate+GB+data+correction"
+            className="text-teal-700 hover:underline"
+          >
+            Contact us
+          </a>
+        </p>
+      </div>
+    </div>
+  );
+}

@@ -1,18 +1,26 @@
 import type { Metadata } from 'next';
+import dynamic from 'next/dynamic';
 
-export const metadata: Metadata = { title: 'Map' };
+export const metadata: Metadata = {
+  title: 'Impact Map',
+  description:
+    'Interactive map of verified GLOF, flood, landslide, and infrastructure-damage events across Gilgit-Baltistan.',
+};
+
+// SSR disabled — MapLibre GL requires browser APIs
+const MapView = dynamic(() => import('@/components/map/MapView'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full w-full items-center justify-center bg-slate-50 text-sm text-slate-400">
+      Loading map…
+    </div>
+  ),
+});
 
 export default function MapPage() {
   return (
-    <section className="mx-auto max-w-6xl px-4 py-12">
-      <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Impact map</h1>
-      <p className="mt-2 text-slate-600">
-        Interactive map of verified flood, GLOF, landslide, and infrastructure-damage events across
-        Gilgit-Baltistan.
-      </p>
-      <div className="mt-8 flex h-[60vh] items-center justify-center rounded-md border border-dashed border-slate-300 bg-white text-sm text-slate-500">
-        Map view arrives in Phase 1.C.
-      </div>
-    </section>
+    <div style={{ height: 'calc(100dvh - 64px)' }} className="flex w-full overflow-hidden">
+      <MapView />
+    </div>
   );
 }
