@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import type { FeatureCollection, Point } from 'geojson';
 import Map, {
   Layer,
@@ -16,9 +17,12 @@ import { format } from 'date-fns';
 import {
   EVENT_TYPE_COLORS,
   EVENT_TYPE_LABELS,
+  EVENT_SUBTYPE_LABELS,
   GB_CENTER,
   GB_DEFAULT_ZOOM,
   GB_DISTRICTS,
+  INCIDENT_STATE_COLORS,
+  LOCATION_PRECISION_LABELS,
   MAP_STYLE,
   SEVERITY_LABELS,
 } from '@/lib/constants';
@@ -27,12 +31,26 @@ interface EventProperties {
   id: number;
   title: string;
   eventType: string;
+  eventSubtype: string | null;
   severity: string;
+  state: string;
   district: string | null;
   locationName: string | null;
+  locationPrecision: string | null;
   reportedAt: string;
-  sourceUrl: string | null;
   affectedCount: number | null;
+  evidenceAvailable: boolean;
+}
+
+interface FeedItem extends EventProperties {
+  latitude: number | null;
+  longitude: number | null;
+}
+
+interface EventsApiResponse {
+  type: 'FeatureCollection';
+  features: FeatureCollection['features'];
+  meta: { total: number; mapVisible: number; feedItems: FeedItem[] };
 }
 
 interface PopupState {
@@ -46,6 +64,7 @@ interface Filters {
   districts: Set<string>;
   from: string;
   to: string;
+  state: '' | 'active' | 'resolved';
 }
 
 const ALL_TYPES = Object.keys(EVENT_TYPE_LABELS);
@@ -115,69 +134,153 @@ const unclusteredLayer: LayerProps = {
   },
 };
 
+// ── fetch state reducer ───────────────────────────────────────────────────────
+// Using useReducer so dispatch (not useState setter) is called inside effects,
+// which satisfies the react-hooks/set-state-in-effect lint rule.
+
+const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] };
+
+type FetchState = {
+  loading: boolean;
+  error: string | null;
+  geojson: FeatureCollection;
+  feedItems: FeedItem[];
+};
+
+type FetchAction =
+  | { type: 'LOAD' }
+  | { type: 'SUCCESS'; geojson: FeatureCollection; feedItems: FeedItem[] }
+  | { type: 'ERROR'; message: string };
+
+function fetchReducer(state: FetchState, action: FetchAction): FetchState {
+  switch (action.type) {
+    case 'LOAD':
+      return { ...state, loading: true, error: null };
+    case 'SUCCESS':
+      return { loading: false, error: null, geojson: action.geojson, feedItems: action.feedItems };
+    case 'ERROR':
+      return { ...state, loading: false, error: action.message };
+    default:
+      return state;
+  }
+}
+
+function initFilters(searchParams: ReturnType<typeof useSearchParams>): Filters {
+  const typesParam = searchParams.get('types');
+  const districtsParam = searchParams.get('districts');
+  const stateParam = searchParams.get('state');
+  return {
+    types: typesParam
+      ? new Set(typesParam.split(',').filter((t) => ALL_TYPES.includes(t)))
+      : new Set(ALL_TYPES),
+    districts: districtsParam
+      ? new Set(
+          districtsParam.split(',').filter((d) => (GB_DISTRICTS as readonly string[]).includes(d)),
+        )
+      : new Set<string>(),
+    from: searchParams.get('from') ?? '',
+    to: searchParams.get('to') ?? '',
+    state: (['active', 'resolved'].includes(stateParam ?? '')
+      ? stateParam
+      : '') as Filters['state'],
+  };
+}
+
 export default function MapView() {
   const mapRef = useRef<MapRef>(null);
-  const [geojson, setGeojson] = useState<FeatureCollection>({
-    type: 'FeatureCollection',
-    features: [],
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const [filters, setFilters] = useState<Filters>(() => initFilters(searchParams));
+  const [fetchState, dispatchFetch] = useReducer(fetchReducer, {
+    loading: true,
+    error: null,
+    geojson: EMPTY_FC,
+    feedItems: [],
   });
-  const [loading, setLoading] = useState(true);
+  const { loading, error, geojson, feedItems } = fetchState;
   const [popup, setPopup] = useState<PopupState | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [filters, setFilters] = useState<Filters>({
-    types: new Set(ALL_TYPES),
-    districts: new Set(),
-    from: '',
-    to: '',
-  });
 
-  // Fetch events GeoJSON
+  // Sync filter state → URL
   useEffect(() => {
     const params = new URLSearchParams();
+    if (filters.types.size > 0 && filters.types.size < ALL_TYPES.length) {
+      params.set('types', [...filters.types].join(','));
+    }
+    if (filters.districts.size > 0) {
+      params.set('districts', [...filters.districts].join(','));
+    }
     if (filters.from) params.set('from', filters.from);
     if (filters.to) params.set('to', filters.to);
+    if (filters.state) params.set('state', filters.state);
+    const qs = params.toString();
+    router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false });
+  }, [filters, pathname, router]);
 
-    fetch(`/api/events?${params}`)
-      .then((r) => r.json())
-      .then((data) => {
-        setGeojson(data);
-        setLoading(false);
+  // Fetch events when filters change; skip when no types selected (derived to empty below).
+  useEffect(() => {
+    if (filters.types.size === 0) return;
+
+    const controller = new AbortController();
+    dispatchFetch({ type: 'LOAD' });
+
+    const params = new URLSearchParams();
+    if (filters.types.size < ALL_TYPES.length) {
+      params.set('types', [...filters.types].join(','));
+    }
+    if (filters.districts.size > 0) {
+      params.set('districts', [...filters.districts].join(','));
+    }
+    if (filters.from) params.set('from', filters.from);
+    if (filters.to) params.set('to', filters.to);
+    if (filters.state) params.set('state', filters.state);
+
+    fetch(`/api/events?${params}`, { signal: controller.signal })
+      .then((r) => {
+        if (!r.ok) throw new Error(`API error ${r.status}`);
+        return r.json() as Promise<EventsApiResponse>;
       })
-      .catch(() => setLoading(false));
-  }, [filters.from, filters.to]);
+      .then((data) => {
+        dispatchFetch({
+          type: 'SUCCESS',
+          geojson: { type: 'FeatureCollection', features: data.features ?? [] },
+          feedItems: data.meta?.feedItems ?? [],
+        });
+      })
+      .catch((err: Error) => {
+        if (err.name !== 'AbortError') {
+          dispatchFetch({ type: 'ERROR', message: err.message ?? 'Failed to load events' });
+        }
+      });
 
-  // Filter features client-side by type + district
-  const filteredGeojson = useMemo<FeatureCollection>(() => {
-    const features = geojson.features.filter((f) => {
-      const p = f.properties as EventProperties;
-      if (!filters.types.has(p.eventType)) return false;
-      if (filters.districts.size > 0 && (!p.district || !filters.districts.has(p.district)))
-        return false;
-      return true;
-    });
-    return { type: 'FeatureCollection', features };
-  }, [geojson, filters.types, filters.districts]);
+    return () => controller.abort();
+  }, [filters]);
+
+  // When no types are selected, show empty map and feed without fetching.
+  const noTypes = filters.types.size === 0;
+  const displayGeojson = useMemo<FeatureCollection>(
+    () => (noTypes ? { type: 'FeatureCollection', features: [] } : geojson),
+    [noTypes, geojson],
+  );
+  const displayFeed = noTypes ? [] : feedItems;
+  const showLoading = loading && !noTypes;
+  const displayError = noTypes ? null : error;
 
   const handleMapClick = useCallback((e: MapLayerMouseEvent) => {
     const map = mapRef.current?.getMap();
     if (!map) return;
 
-    // Handle cluster click → zoom in
-    const clusterFeatures = map.queryRenderedFeatures(e.point, {
-      layers: ['events-clusters'],
-    });
+    const clusterFeatures = map.queryRenderedFeatures(e.point, { layers: ['events-clusters'] });
     if (clusterFeatures.length > 0) {
       const f = clusterFeatures[0];
       const coords = (f.geometry as Point).coordinates;
-      const zoom = map.getZoom();
-      map.easeTo({ center: [coords[0], coords[1]], zoom: zoom + 2, duration: 400 });
+      map.easeTo({ center: [coords[0], coords[1]], zoom: map.getZoom() + 2, duration: 400 });
       return;
     }
 
-    // Handle single event click → popup
-    const eventFeatures = map.queryRenderedFeatures(e.point, {
-      layers: ['events-unclustered'],
-    });
+    const eventFeatures = map.queryRenderedFeatures(e.point, { layers: ['events-unclustered'] });
     if (eventFeatures.length > 0) {
       const f = eventFeatures[0];
       const coords = (f.geometry as Point).coordinates;
@@ -188,6 +291,27 @@ export default function MapView() {
       });
     }
   }, []);
+
+  const handleFeedItemClick = useCallback(
+    (item: FeedItem) => {
+      if (item.latitude != null && item.longitude != null && item.locationPrecision !== 'pending') {
+        mapRef.current?.getMap()?.flyTo({
+          center: [item.longitude, item.latitude],
+          zoom: 11,
+          duration: 800,
+        });
+        setPopup({
+          longitude: item.longitude,
+          latitude: item.latitude,
+          properties: item,
+        });
+        setFiltersOpen(false);
+      } else {
+        router.push(`/events/${item.id}`);
+      }
+    },
+    [router],
+  );
 
   const toggleType = (type: string) => {
     setFilters((prev) => {
@@ -207,6 +331,12 @@ export default function MapView() {
     });
   };
 
+  const activeFilterCount =
+    (filters.types.size < ALL_TYPES.length ? 1 : 0) +
+    filters.districts.size +
+    (filters.from || filters.to ? 1 : 0) +
+    (filters.state ? 1 : 0);
+
   return (
     <div className="relative flex h-full w-full">
       {/* Filter toggle — mobile */}
@@ -216,9 +346,9 @@ export default function MapView() {
       >
         <FilterIcon />
         Filters
-        {filters.districts.size + (filters.types.size < ALL_TYPES.length ? 1 : 0) > 0 && (
+        {activeFilterCount > 0 && (
           <span className="ml-1 flex h-4 w-4 items-center justify-center rounded-full bg-teal-700 text-[10px] text-white">
-            •
+            {activeFilterCount}
           </span>
         )}
       </button>
@@ -231,13 +361,20 @@ export default function MapView() {
           filtersOpen ? 'translate-x-0' : '-translate-x-full',
         ].join(' ')}
       >
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+        {/* Sidebar header */}
+        <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-200 px-4 py-3">
           <span className="text-sm font-semibold text-slate-700">Filters</span>
           <div className="flex items-center gap-2">
             <button
               className="text-xs text-teal-700 hover:underline"
               onClick={() =>
-                setFilters({ types: new Set(ALL_TYPES), districts: new Set(), from: '', to: '' })
+                setFilters({
+                  types: new Set(ALL_TYPES),
+                  districts: new Set(),
+                  from: '',
+                  to: '',
+                  state: '',
+                })
               }
             >
               Reset
@@ -251,7 +388,8 @@ export default function MapView() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-5">
+        {/* Filter body */}
+        <div className="flex-shrink-0 overflow-y-auto border-b border-slate-200 p-4 [max-height:280px] space-y-5">
           {/* Event type */}
           <div>
             <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -341,11 +479,83 @@ export default function MapView() {
               </div>
             </div>
           </div>
+
+          {/* State */}
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Status
+            </p>
+            <select
+              value={filters.state}
+              onChange={(e) =>
+                setFilters((p) => ({ ...p, state: e.target.value as Filters['state'] }))
+              }
+              className="w-full rounded border border-slate-300 px-2 py-1 text-sm focus:border-teal-500 focus:outline-none"
+            >
+              <option value="">All</option>
+              <option value="active">Active</option>
+              <option value="resolved">Resolved</option>
+            </select>
+          </div>
         </div>
 
-        {/* Event count */}
-        <div className="border-t border-slate-200 px-4 py-3 text-xs text-slate-500">
-          {loading ? 'Loading…' : `${filteredGeojson.features.length} event(s) shown`}
+        {/* Recent events feed */}
+        <div className="flex flex-shrink-0 items-center justify-between bg-slate-50 px-4 py-2">
+          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            Recent events
+          </span>
+          <span className="text-xs text-slate-400">
+            {showLoading ? '…' : `${displayFeed.length} shown`}
+          </span>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto divide-y divide-slate-100">
+          {showLoading && (
+            <div className="px-4 py-6 text-center text-xs text-slate-400">Loading…</div>
+          )}
+          {!showLoading && displayError && (
+            <div className="px-4 py-6 text-center text-xs text-red-500">{displayError}</div>
+          )}
+          {!showLoading && !displayError && displayFeed.length === 0 && (
+            <div className="px-4 py-6 text-center text-xs text-slate-400">
+              No events match the current filters.
+            </div>
+          )}
+          {!showLoading &&
+            !displayError &&
+            displayFeed.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => handleFeedItemClick(item)}
+                className="w-full px-4 py-3 text-left hover:bg-slate-50 transition-colors"
+              >
+                <div className="mb-1 flex items-center gap-1.5">
+                  <span
+                    className="h-2 w-2 flex-shrink-0 rounded-full"
+                    style={{ backgroundColor: EVENT_TYPE_COLORS[item.eventType] ?? '#6b7280' }}
+                  />
+                  <span className="text-xs text-slate-500">
+                    {EVENT_TYPE_LABELS[item.eventType] ?? item.eventType}
+                    {item.eventSubtype &&
+                      ` · ${EVENT_SUBTYPE_LABELS[item.eventSubtype] ?? item.eventSubtype}`}
+                  </span>
+                  {item.state === 'active' && (
+                    <span className="ml-auto rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-600">
+                      Active
+                    </span>
+                  )}
+                  {item.locationPrecision === 'pending' && (
+                    <span className="ml-auto rounded bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-600">
+                      Location pending
+                    </span>
+                  )}
+                </div>
+                <p className="line-clamp-2 text-xs font-medium text-slate-800">{item.title}</p>
+                <p className="mt-0.5 text-xs text-slate-400">
+                  {item.district ?? 'GB'} · {format(new Date(item.reportedAt), 'MMM d, yyyy')}
+                </p>
+              </button>
+            ))}
         </div>
       </aside>
 
@@ -358,12 +568,23 @@ export default function MapView() {
             onClick={() => setFiltersOpen(true)}
           >
             <FilterIcon /> Filters
+            {activeFilterCount > 0 && (
+              <span className="ml-1 rounded-full bg-teal-700 px-1.5 py-0.5 text-[10px] text-white">
+                {activeFilterCount}
+              </span>
+            )}
           </button>
         )}
 
-        {loading && (
+        {showLoading && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60">
             <span className="text-sm text-slate-500">Loading events…</span>
+          </div>
+        )}
+
+        {displayError && !showLoading && (
+          <div className="absolute top-3 left-1/2 z-10 -translate-x-1/2 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700 shadow">
+            {displayError}
           </div>
         )}
 
@@ -385,7 +606,7 @@ export default function MapView() {
           <Source
             id="events"
             type="geojson"
-            data={filteredGeojson}
+            data={displayGeojson}
             cluster={true}
             clusterMaxZoom={13}
             clusterRadius={50}
@@ -415,6 +636,14 @@ export default function MapView() {
                   />
                   <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                     {EVENT_TYPE_LABELS[popup.properties.eventType] ?? popup.properties.eventType}
+                    {popup.properties.eventSubtype && (
+                      <span className="normal-case font-normal">
+                        {' '}
+                        ·{' '}
+                        {EVENT_SUBTYPE_LABELS[popup.properties.eventSubtype] ??
+                          popup.properties.eventSubtype}
+                      </span>
+                    )}
                   </span>
                   <span
                     className="ml-auto rounded px-1.5 py-0.5 text-[10px] font-medium"
@@ -452,10 +681,29 @@ export default function MapView() {
                 </p>
 
                 {popup.properties.affectedCount != null && (
-                  <p className="mb-2 text-xs text-slate-600">
+                  <p className="mb-1.5 text-xs text-slate-600">
                     {popup.properties.affectedCount.toLocaleString()} affected
                   </p>
                 )}
+
+                <div className="mb-2 flex items-center gap-2">
+                  <span
+                    className="rounded px-1.5 py-0.5 text-[10px] font-medium"
+                    style={{
+                      color: INCIDENT_STATE_COLORS[popup.properties.state] ?? '#6b7280',
+                      backgroundColor: popup.properties.state === 'active' ? '#fee2e2' : '#f1f5f9',
+                    }}
+                  >
+                    {popup.properties.state === 'active' ? 'Active' : 'Resolved'}
+                  </span>
+                  {popup.properties.locationPrecision &&
+                    popup.properties.locationPrecision !== 'pending' && (
+                      <span className="text-[10px] text-slate-400">
+                        {LOCATION_PRECISION_LABELS[popup.properties.locationPrecision] ??
+                          popup.properties.locationPrecision}
+                      </span>
+                    )}
+                </div>
 
                 <a
                   href={`/events/${popup.properties.id}`}

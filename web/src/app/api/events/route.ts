@@ -7,9 +7,6 @@ export const dynamic = 'force-dynamic';
 // Maximum number of events returned per request to keep payload compact.
 const MAX_RESULTS = 500;
 
-// Default window: 30 days + any active incidents outside that window.
-const DEFAULT_WINDOW_DAYS = 30;
-
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
 
@@ -47,17 +44,13 @@ export async function GET(req: NextRequest) {
   const stateParam = searchParams.get('state');
   const state = stateParam === 'active' || stateParam === 'resolved' ? stateParam : undefined;
 
-  // Default window: if no date range given, use last 30 days as `from`.
-  // Active incidents older than 30 days are still included via the state filter.
-  const effectiveFrom = from ?? new Date(Date.now() - DEFAULT_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-
   let rows;
   try {
     rows = await getEvents(
       {
         types: types.length ? types : undefined,
         districts: districts.length ? districts : undefined,
-        from: effectiveFrom,
+        from,
         to,
         status: 'verified',
         state,
