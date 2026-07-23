@@ -34,7 +34,7 @@ ENV DATABASE_URL=postgresql://build-placeholder:x@localhost:5432/none
 ENV AUTH_SECRET=build-placeholder-replace-at-runtime
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN pnpm build
+RUN mkdir -p public && pnpm build
 
 # ─── runner ──────────────────────────────────────────────────────────────
 FROM node:22-alpine AS runner
