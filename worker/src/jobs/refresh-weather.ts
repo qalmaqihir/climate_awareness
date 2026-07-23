@@ -52,10 +52,10 @@ export async function refreshWeather() {
           INSERT INTO weather_snapshots
             (district, latitude, longitude, temperature_celsius, precipitation_mm, windspeed_kmh, weather_code, raw_json, fetched_at)
           VALUES
-            (${district.name}, ${String(district.lat)}, ${String(district.lon)},
-             ${String(current.temperature_2m ?? '')},
-             ${String(current.precipitation ?? '')},
-             ${String(current.windspeed_10m ?? '')},
+            (${district.name}, ${district.lat}, ${district.lon},
+             ${current.temperature_2m ?? null},
+             ${current.precipitation ?? null},
+             ${current.windspeed_10m ?? null},
              ${current.weather_code ?? null},
              ${JSON.stringify(data)},
              NOW())

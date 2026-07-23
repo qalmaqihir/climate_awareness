@@ -15,14 +15,23 @@ const SOURCES = [
     slug: 'pamir-times',
     url: 'https://www.pamirtimes.net',
     type: 'media' as const,
-    description: 'Leading English-language newspaper for Gilgit-Baltistan.',
+    description: 'Leading English-language newspaper for Gilgit-Baltistan. Regularly updated.',
   },
   {
-    name: 'Ibex Media Network',
-    slug: 'ibex-media',
-    url: 'https://www.ibexmedianetwork.com',
-    type: 'media' as const,
-    description: 'Regional news network covering GB climate and disaster events.',
+    name: 'Pakistan Meteorological Department',
+    slug: 'pmd',
+    url: 'https://www.pmd.gov.pk',
+    type: 'government' as const,
+    description:
+      'Official weather and GLOF early warning authority. Scraped hourly for GB warnings.',
+  },
+  {
+    name: 'NDMA Pakistan',
+    slug: 'ndma',
+    url: 'https://ndma.gov.pk',
+    type: 'government' as const,
+    description:
+      'National Disaster Management Authority — publishes situation reports during emergencies.',
   },
   {
     name: 'PDMA Gilgit-Baltistan',
@@ -32,18 +41,12 @@ const SOURCES = [
     description: 'Provincial Disaster Management Authority for Gilgit-Baltistan.',
   },
   {
-    name: 'NDMA Pakistan',
-    slug: 'ndma',
-    url: 'https://ndma.gov.pk',
-    type: 'government' as const,
-    description: 'National Disaster Management Authority — national-level alerts.',
-  },
-  {
-    name: 'Pakistan Meteorological Department',
-    slug: 'pmd',
-    url: 'https://www.pmd.gov.pk',
-    type: 'government' as const,
-    description: 'Official weather and GLOF early warning authority.',
+    name: 'ReliefWeb',
+    slug: 'reliefweb',
+    url: 'https://reliefweb.int',
+    type: 'academic' as const,
+    description:
+      'UN OCHA humanitarian information platform. Aggregates Pakistan NDMA/PMD/PDMA situation reports. Scraped via free API.',
   },
   {
     name: 'ICIMOD',
@@ -60,6 +63,14 @@ const SOURCES = [
     type: 'ngo' as const,
     status: 'inactive' as const,
     description: 'AKAH operates FOCUS and early-warning systems in GB. Phase 3 integration target.',
+  },
+  {
+    name: 'Ibex Media Network',
+    slug: 'ibex-media',
+    url: 'https://www.ibexmedianetwork.com',
+    type: 'media' as const,
+    status: 'inactive' as const,
+    description: 'Regional GB news network. Marked inactive — verify URL before activating.',
   },
 ] satisfies (typeof sources.$inferInsert)[];
 

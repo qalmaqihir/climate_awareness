@@ -20,7 +20,6 @@
     "bcryptjs": "^3.0.3",
     "date-fns": "^4.4.0",
     "drizzle-orm": "^0.45.2",
-    "ioredis": "^5.11.1",
     "maplibre-gl": "^5.24.0",
     "next": "16.2.11",
     "next-auth": "5.0.0-beta.32",

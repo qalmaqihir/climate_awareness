@@ -2,7 +2,7 @@
 
 **Companion to:** `idea.md`
 **Last updated:** 2026-07-23
-**Current phase:** Phase 1.G (VPS deploy) — awaiting user runbook execution
+**Current phase:** Phase 1.H (TBD — post-deploy, pre-Phase 2)
 **Resume rule:** Always read this file top-to-bottom before resuming work. Update the **Status** column of every task as you go.
 
 ---
@@ -290,19 +290,49 @@ create table weather_snapshots (
 
 ## 1.G — Deploy v1 to VPS (End of Week 4)
 
-| #     | Task                                                                                                 | Status | Notes                                                                |
-| ----- | ---------------------------------------------------------------------------------------------------- | ------ | -------------------------------------------------------------------- |
-| 1.G.1 | On VPS: `cd /opt/climate-gb && git pull && docker compose build web worker && docker compose up -d`  | ⬜     | Also apply migrations: `docker compose run --rm web pnpm db:migrate` |
-| 1.G.2 | NPM proxy host: subdomain → `web:3000`, force SSL (Let's Encrypt), Cloudflare in front               | ⬜     | Websockets on if needed for MapLibre HMR (prod: no HMR)              |
-| 1.G.3 | Verify Cloudflare cache rules (bypass on `/admin`, `/api/*`; cache static assets)                    | ⬜     |                                                                      |
-| 1.G.4 | Seed 10–20 verified events from Pamir Times + Ibex last 6 months                                     | ⬜     | Manual via admin                                                     |
-| 1.G.5 | Smoke test in production: home, map, event detail, alerts, admin login, oEmbed                       | ⬜     |                                                                      |
-| 1.G.6 | Confirm nightly `pg_dump` backup ran + upload succeeded                                              | ⬜     |                                                                      |
-| 1.G.7 | Tag release `v1.0.0`                                                                                 | ⬜     |                                                                      |
-| 1.G.8 | Simple deploy script `bin/deploy.sh` (git pull + compose build + compose up + migrate + healthcheck) | ⬜     | Idempotent                                                           |
-| 1.G.9 | Announce on personal Twitter/LinkedIn (soft launch)                                                  | ⬜     |                                                                      |
+| #     | Task                                                                                                 | Status | Notes                                          |
+| ----- | ---------------------------------------------------------------------------------------------------- | ------ | ---------------------------------------------- |
+| 1.G.1 | On VPS: `cd /opt/climate-gb && git pull && docker compose build web worker && docker compose up -d`  | ✅     | Done. Also applied migrations and seeded data. |
+| 1.G.2 | NPM proxy host: subdomain → `web:3000`, force SSL (Let's Encrypt), Cloudflare in front               | ✅     | Done.                                          |
+| 1.G.3 | Verify Cloudflare cache rules (bypass on `/admin`, `/api/*`; cache static assets)                    | ✅     | Done.                                          |
+| 1.G.4 | Seed 10–20 verified events from Pamir Times + Ibex last 6 months                                     | ✅     | Done via admin.                                |
+| 1.G.5 | Smoke test in production: home, map, event detail, alerts, admin login, oEmbed                       | ✅     | Done.                                          |
+| 1.G.6 | Confirm nightly `pg_dump` backup ran + upload succeeded                                              | ✅     | Done.                                          |
+| 1.G.7 | Tag release `v1.0.0`                                                                                 | ✅     | Done.                                          |
+| 1.G.8 | Simple deploy script `bin/deploy.sh` (git pull + compose build + compose up + migrate + healthcheck) | ✅     | Done.                                          |
+| 1.G.9 | Announce on personal Twitter/LinkedIn (soft launch)                                                  | ⬜     | User to do.                                    |
+
+**Adversarial code review (post-1.G):** 13 P0+P1 fixes applied and typechecked clean.
+P0: open redirect fix (callbackUrl), SSRF/timeout fix (oembed.ts), readOnly embedHtml textarea.
+P1: sign-out POST server action, JWT type merge, DATABASE_URL guard, Dockerfile pnpm fix, date validation, row limit, 404 on missing event, lat/lng pair validation, weather_code field fix + cleanup + Promise.all, SIGINT handler.
+P2 deferred: weatherSnapshots lat/lng as text (needs migration), DOMPurify for oEmbed HTML, CSP headers, ioredis cleanup, admin pagination.
 
 **Exit v1.** Move to Phase 2 planning check.
+
+---
+
+## 1.H — Post-Deploy Hardening + Alert Scraper
+
+| #     | Task                                                                                                      | Status | Notes                                                                                           |
+| ----- | --------------------------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------- |
+| 1.H.1 | Security headers in `next.config.ts`: X-Content-Type-Options, X-Frame-Options, Referrer-Policy, HSTS, CSP | ✅     | CSP allows MapLibre blobs, Meta oEmbed scripts, Google Fonts, Plausible.                        |
+| 1.H.2 | Remove `ioredis` from `web/package.json` (completely unused — Redis not wired)                            | ✅     | `pnpm remove ioredis` via typecheck step.                                                       |
+| 1.H.3 | `weatherSnapshots` schema: lat/lon/temp/precip/wind `text` → `real`                                       | ✅     | `schema.ts` updated. Migration `0001_burly_cardiac.sql` adds `DELETE` before `ALTER TYPE`.      |
+| 1.H.4 | Update `refresh-weather.ts` to write numerics not strings                                                 | ✅     | Removes `String(...)` wrappers; passes `null` for missing values.                               |
+| 1.H.5 | Plausible analytics in `layout.tsx` (conditional on `NEXT_PUBLIC_PLAUSIBLE_DOMAIN`)                       | ✅     | `<Script strategy="afterInteractive">` — no-op if env var unset. Added to `.env.example`.       |
+| 1.H.6 | Add `reliefweb` source to seed; mark `ibex-media` inactive                                                | ✅     | ReliefWeb = UN OCHA, aggregates NDMA/PMD Pakistan reports. Ibex URL unverified → inactive.      |
+| 1.H.7 | Write `worker/src/jobs/check-alerts.ts`: ReliefWeb JSON API + PMD Cheerio scraper                         | ✅     | GB-keyword filter, level/type inference, dedup by source_url. PMD logs selector miss for debug. |
+| 1.H.8 | Wire `checkAlerts` into `worker/src/index.ts` (replaces `checkPdmaAlerts` stub)                           | ✅     | Hourly cron + startup run. Old `check-pdma.ts` stub retained but no longer imported.            |
+| 1.H.9 | typecheck + lint + migration generate → commit                                                            | ✅     | Both packages clean. Migration committed.                                                       |
+
+**LangGraph RAG Agent** → Phase 2.A (confirmed deferred by user).
+
+**Known gaps after 1.H:**
+
+- PMD page HTML structure unconfirmed — scraper logs a 500-char preview on selector miss; adjust selectors after first VPS run
+- ReliefWeb covers national Pakistan reports; GB filtering by keyword (gilgit/baltistan/glof/skardu etc.) may miss some or include borderline items — review DB after first run
+- `NEXT_PUBLIC_PLAUSIBLE_DOMAIN` not set on VPS yet — add to root `.env` when Plausible account created
+- `db:migrate` must run on VPS to apply `0001_burly_cardiac.sql` before restarting containers
 
 ---
 

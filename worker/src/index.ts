@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import { refreshWeather } from './jobs/refresh-weather.js';
-import { checkPdmaAlerts } from './jobs/check-pdma.js';
+import { checkAlerts } from './jobs/check-alerts.js';
 import { pool } from './db.js';
 
 console.log('[worker] Starting Climate Awareness GB worker');
@@ -16,10 +16,10 @@ cron.schedule('0 */6 * * *', async () => {
   await refreshWeather().catch((e) => console.error('[cron] weather error:', e));
 });
 
-// PDMA/NDMA alert check every hour
+// Alert scraper: ReliefWeb API + PMD warnings page, every hour
 cron.schedule('0 * * * *', async () => {
-  console.log('[cron] Triggering PDMA alert check');
-  await checkPdmaAlerts().catch((e) => console.error('[cron] pdma error:', e));
+  console.log('[cron] Triggering alert check');
+  await checkAlerts().catch((e) => console.error('[cron] alerts error:', e));
 });
 
 console.log('[worker] Crons scheduled. Running initial jobs…');
@@ -27,7 +27,7 @@ console.log('[worker] Crons scheduled. Running initial jobs…');
 // Run immediately on startup
 await Promise.all([
   refreshWeather().catch((e) => console.error('[startup] weather error:', e)),
-  checkPdmaAlerts().catch((e) => console.error('[startup] pdma error:', e)),
+  checkAlerts().catch((e) => console.error('[startup] alerts error:', e)),
 ]);
 
 console.log('[worker] Ready. Waiting for scheduled triggers.');
