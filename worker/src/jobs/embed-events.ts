@@ -46,8 +46,11 @@ function buildEmbeddingText(row: Record<string, unknown>): string {
     row.title as string,
     row.description ? String(row.description) : '',
     row.event_type ? `Type: ${row.event_type}` : '',
+    row.severity ? `Severity: ${row.severity}` : '',
     row.district ? `District: ${row.district}` : '',
     row.location_name ? `Location: ${row.location_name}` : '',
+    row.affected_count ? `Affected: ${row.affected_count} people` : '',
+    row.reported_date ? `Date: ${row.reported_date}` : '',
   ]
     .filter(Boolean)
     .join('. ');
@@ -60,7 +63,10 @@ export async function embedUnindexedEvents() {
   }
 
   const unindexed = await db.execute(sql`
-    SELECT id, title, description, event_type, district, location_name
+    SELECT
+      id, title, description, event_type, district, location_name,
+      severity, affected_count,
+      to_char(reported_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS reported_date
     FROM events
     WHERE status = 'verified' AND embedding_v1 IS NULL
     ORDER BY reported_at DESC

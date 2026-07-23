@@ -7,6 +7,7 @@ export interface RetrievedDoc {
   severity: string;
   sourceUrl: string | null;
   reportedAt: string;
+  affectedCount: number | null;
   similarity: number;
 }
 

@@ -6,7 +6,7 @@
  *
  * Nodes:
  *   guardrails — fast keyword check; no LLM cost
- *   retrieve   — pgvector similarity search over verified events
+ *   retrieve   — hybrid pgvector + full-text search with RRF fusion
  *   generate   — LLM answer grounded in retrieved context, with citations
  */
 import { Annotation, StateGraph, START, END } from '@langchain/langgraph';
@@ -17,17 +17,24 @@ import { searchSimilar } from './vectorstore';
 import { checkGuardrails } from './guardrails';
 import type { RetrievedDoc, Citation } from './types';
 
-const SYSTEM_PROMPT = `You are a factual research assistant for the Climate Awareness GB platform, \
+function buildSystemPrompt(): string {
+  const today = new Date().toISOString().split('T')[0];
+  return `You are a factual research assistant for the Climate Awareness GB platform, \
 which tracks verified GLOF (glacial lake outburst flood) events, flash floods, landslides, and \
 extreme weather incidents in Gilgit-Baltistan (GB), Pakistan.
+
+Today's date: ${today}. Use this when interpreting relative time references such as \
+"last year", "recent", "this season", or "currently".
 
 Your role:
 - Answer questions using ONLY the verified event data provided below.
 - Be specific: cite event IDs ([Event #N]), dates, districts, and affected counts when available.
-- If the data doesn't answer the question, say so plainly — do not invent facts.
+- When comparing events, rank by severity or affected count and name the top results explicitly.
+- If the data doesn't answer the question, say so plainly — do not invent or extrapolate facts.
 - Refuse questions unrelated to GB climate/disasters with a brief, polite explanation.
 - Keep responses concise (2-4 paragraphs), factual, and suitable for journalists and researchers.
-- Format numbers with commas. Use "N/A" when data is missing.`;
+- Format numbers with commas. Use "N/A" when a data field is missing.`;
+}
 
 // ─── Graph state ──────────────────────────────────────────────────────────────
 
@@ -68,7 +75,7 @@ async function guardrailsNode(state: typeof AgentState.State) {
 
 async function retrieveNode(state: typeof AgentState.State) {
   const embedding = await embedQuery(state.query);
-  const docs = await searchSimilar(embedding, 6);
+  const docs = await searchSimilar(embedding, state.query, 6);
   return { docs };
 }
 
@@ -78,17 +85,27 @@ async function generateNode(state: typeof AgentState.State) {
   const contextBlock =
     state.docs.length > 0
       ? state.docs
-          .map(
-            (d) =>
-              `[Event #${d.id}] ${d.title}\n` +
-              `Type: ${d.eventType} | Severity: ${d.severity} | District: ${d.district ?? 'Unknown'} | Date: ${d.reportedAt}\n` +
-              `Details: ${d.content}`,
-          )
+          .map((d: RetrievedDoc) => {
+            const meta = [
+              `Type: ${d.eventType}`,
+              `Severity: ${d.severity}`,
+              `District: ${d.district ?? 'Unknown'}`,
+              `Date: ${d.reportedAt}`,
+              d.affectedCount != null
+                ? `Affected: ${d.affectedCount.toLocaleString()} people`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(' | ');
+
+            return `[Event #${d.id}] ${d.title}\n${meta}\nDetails: ${d.content}`;
+          })
           .join('\n\n---\n\n')
-      : 'No relevant verified events found in the database for this query.';
+      : 'No relevant verified events found in the database for this query. ' +
+        'Do not speculate or invent events — tell the user the database has no matching data.';
 
   const response = await model.invoke([
-    new SystemMessage(SYSTEM_PROMPT),
+    new SystemMessage(buildSystemPrompt()),
     new HumanMessage(
       `Verified GB Climate Event Data:\n\n${contextBlock}\n\nQuestion: ${state.query}`,
     ),
@@ -99,7 +116,7 @@ async function generateNode(state: typeof AgentState.State) {
       ? response.content
       : (response.content as Array<{ text?: string }>).map((c) => c.text ?? '').join('');
 
-  const citations: Citation[] = state.docs.map((d) => ({
+  const citations: Citation[] = state.docs.map((d: RetrievedDoc) => ({
     id: d.id,
     title: d.title,
     district: d.district,
