@@ -2,26 +2,70 @@
  * POST /api/subscribe/verify
  *
  * Verifies the OTP sent by /api/subscribe, then upserts the subscriber row.
+ * Uses stored hash (SHA-256) comparison with timingSafeEqual.
+ * Invalidates OTP after 5 failed attempts to prevent brute force.
+ * Uses districts stored at subscribe time — ignores client-supplied list.
  *
- * Body: { phone: string (E.164), code: string (6 digits), districts: string[] }
+ * Body: { phone: string (E.164), code: string (6 digits) }
  *
  * On success: subscriber is active, OTP row deleted.
  */
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { type NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod/v4';
 import { sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { GB_DISTRICTS } from '@/lib/constants';
 
+const MAX_OTP_ATTEMPTS = 5;
 const E164_REGEX = /^\+[1-9]\d{6,14}$/;
 
 const bodySchema = z.object({
   phone: z.string().regex(E164_REGEX, 'Invalid phone format'),
   code: z.string().regex(/^\d{6}$/, 'Code must be exactly 6 digits'),
-  districts: z.array(z.string()).max(12).default([]),
 });
 
+// ─── Rate limiting ────────────────────────────────────────────────────────────
+
+interface RateBucket {
+  count: number;
+  resetAt: number;
+}
+const ipBuckets = new Map<string, RateBucket>();
+const VERIFY_IP_LIMIT = 20;
+const VERIFY_WINDOW_MS = 60 * 60 * 1_000;
+
+function checkVerifyRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const bucket = ipBuckets.get(ip);
+  if (!bucket || now > bucket.resetAt) {
+    ipBuckets.set(ip, { count: 1, resetAt: now + VERIFY_WINDOW_MS });
+    return true;
+  }
+  if (bucket.count >= VERIFY_IP_LIMIT) return false;
+  bucket.count += 1;
+  return true;
+}
+
+setInterval(
+  () => {
+    const now = Date.now();
+    for (const [k, b] of ipBuckets) if (now > b.resetAt) ipBuckets.delete(k);
+  },
+  2 * 60 * 60 * 1_000,
+);
+
+// ─── Route ────────────────────────────────────────────────────────────────────
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  const ip =
+    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+    req.headers.get('x-real-ip') ??
+    'unknown';
+
+  if (!checkVerifyRateLimit(ip)) {
+    return NextResponse.json({ error: 'Too many requests. Try again later.' }, { status: 429 });
+  }
+
   let body: unknown;
   try {
     body = await req.json();
@@ -34,13 +78,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { phone, code, districts } = parsed.data;
+  const { phone, code } = parsed.data;
 
   // Look up OTP
   const otpResult = await db
     .execute(
       sql`
-    SELECT code, expires_at FROM sms_otps WHERE phone = ${phone} LIMIT 1
+    SELECT code, districts, attempt_count, expires_at
+    FROM sms_otps WHERE phone = ${phone} LIMIT 1
   `,
     )
     .catch(() => null);
@@ -54,34 +99,50 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // Constant-time comparison to resist timing attacks
-  const storedCode = otpRow.code as string;
-  const codeMatch =
-    storedCode.length === code.length && crypto.subtle !== undefined
-      ? await crypto.subtle
-          .importKey('raw', Buffer.from(storedCode), { name: 'HMAC', hash: 'SHA-256' }, false, [
-            'sign',
-          ])
-          .then((key) => crypto.subtle.sign('HMAC', key, Buffer.from(code)))
-          .then(() => storedCode === code)
-          .catch(() => storedCode === code)
-      : storedCode === code;
-
-  if (!codeMatch) {
-    return NextResponse.json({ error: 'Invalid code.' }, { status: 400 });
+  // Brute-force protection: invalidate after too many failed attempts
+  if ((otpRow.attempt_count as number) >= MAX_OTP_ATTEMPTS) {
+    await db.execute(sql`DELETE FROM sms_otps WHERE phone = ${phone}`).catch(() => {});
+    return NextResponse.json(
+      { error: 'Too many failed attempts. Request a new code.' },
+      { status: 400 },
+    );
   }
 
+  // Expiry check before comparing (avoids incrementing attempt_count on expired OTPs)
   const expiresAt = new Date(otpRow.expires_at as string);
   if (expiresAt < new Date()) {
-    // Clean up expired OTP
     await db.execute(sql`DELETE FROM sms_otps WHERE phone = ${phone}`).catch(() => {});
     return NextResponse.json({ error: 'Code has expired. Request a new one.' }, { status: 400 });
   }
 
-  // Validate district names
-  const validDistricts = districts.filter((d) =>
-    GB_DISTRICTS.includes(d as (typeof GB_DISTRICTS)[number]),
-  );
+  // Constant-time hash comparison — compares SHA-256(user_input) vs stored hash
+  const storedHash = Buffer.from(otpRow.code as string, 'hex');
+  const inputHash = Buffer.from(createHash('sha256').update(code).digest('hex'), 'hex');
+
+  const codeMatch =
+    storedHash.length === inputHash.length && timingSafeEqual(storedHash, inputHash);
+
+  if (!codeMatch) {
+    // Increment attempt counter; delete row when limit is hit
+    const newCount = (otpRow.attempt_count as number) + 1;
+    if (newCount >= MAX_OTP_ATTEMPTS) {
+      await db.execute(sql`DELETE FROM sms_otps WHERE phone = ${phone}`).catch(() => {});
+    } else {
+      await db
+        .execute(sql`UPDATE sms_otps SET attempt_count = ${newCount} WHERE phone = ${phone}`)
+        .catch(() => {});
+    }
+    const remaining = Math.max(0, MAX_OTP_ATTEMPTS - newCount);
+    return NextResponse.json(
+      {
+        error: `Invalid code.${remaining > 0 ? ` ${remaining} attempt${remaining !== 1 ? 's' : ''} remaining.` : ' Code invalidated.'}`,
+      },
+      { status: 400 },
+    );
+  }
+
+  // Use districts stored at subscribe time — never trust client-resupplied list
+  const validDistricts = (otpRow.districts as string[]) ?? [];
 
   // Upsert subscriber — handles both fresh signups and re-activations
   await db.execute(sql`

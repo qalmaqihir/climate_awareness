@@ -2,10 +2,12 @@
  * POST /api/admin/alerts/[id]/override
  *
  * Lets an admin override the AI verification decision for an alert.
- * Records the override in review_decisions for audit trail.
+ * Wraps the alert UPDATE and audit INSERT in a transaction — both succeed or neither does.
+ * When action='verify', sets needs_push_notify=true so the worker dispatches
+ * push notifications on its next run (avoids cross-package import of push-notify).
  *
  * Body: { action: 'verify' | 'suppress', rationale?: string }
- *   verify   → is_active=true, ai_verified=true, ai_confidence=100
+ *   verify   → is_active=true, ai_verified=true, ai_confidence=100, needs_push_notify=true
  *   suppress → is_active=false, ai_verified=true, ai_confidence=0
  */
 import { type NextRequest, NextResponse } from 'next/server';
@@ -32,6 +34,12 @@ export async function POST(
   const session = await requireAdmin();
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  // reviewer_id is a NOT NULL FK to users.id — must be a real user ID
+  const reviewerId = session.user.id;
+  if (!reviewerId) {
+    return NextResponse.json({ error: 'Session missing user ID' }, { status: 500 });
   }
 
   const { id } = await params;
@@ -73,17 +81,9 @@ export async function POST(
     action === 'verify'
       ? `Human override: verified by admin (${session.user.email ?? 'unknown'})`
       : `Human override: suppressed by admin (${session.user.email ?? 'unknown'})`;
+  // When admin verifies, flag for push dispatch on the worker's next cycle
+  const needsPushNotify = action === 'verify';
 
-  await db.execute(sql`
-    UPDATE alerts
-    SET  is_active      = ${isActive},
-         ai_verified    = true,
-         ai_confidence  = ${aiConfidence},
-         ai_summary     = ${aiSummary}
-    WHERE id = ${alertId}
-  `);
-
-  // Write audit trail to review_decisions
   const beforeState = {
     is_active: current.rows[0].is_active,
     ai_confidence: current.rows[0].ai_confidence,
@@ -91,24 +91,38 @@ export async function POST(
   };
   const afterState = { is_active: isActive, ai_confidence: aiConfidence, ai_summary: aiSummary };
 
-  await db
-    .execute(
-      sql`
-    INSERT INTO review_decisions
-      (reviewer_id, reviewer_email, target_type, target_id, action, rationale, before_state, after_state)
-    VALUES (
-      ${session.user.id ?? ''},
-      ${session.user.email ?? ''},
-      'alert',
-      ${alertId},
-      ${action === 'verify' ? 'publish' : 'reject'},
-      ${rationale ?? null},
-      ${JSON.stringify(beforeState)}::jsonb,
-      ${JSON.stringify(afterState)}::jsonb
-    )
-  `,
-    )
-    .catch((err) => console.error('[override] Failed to write review_decision:', err));
+  // Both UPDATE and audit INSERT must succeed together — use a transaction
+  try {
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`
+        UPDATE alerts
+        SET  is_active         = ${isActive},
+             ai_verified       = true,
+             ai_confidence     = ${aiConfidence},
+             ai_summary        = ${aiSummary},
+             needs_push_notify = ${needsPushNotify}
+        WHERE id = ${alertId}
+      `);
+
+      await tx.execute(sql`
+        INSERT INTO review_decisions
+          (reviewer_id, reviewer_email, target_type, target_id, action, rationale, before_state, after_state)
+        VALUES (
+          ${reviewerId},
+          ${session.user.email ?? ''},
+          'alert',
+          ${alertId},
+          ${action === 'verify' ? 'publish' : 'reject'},
+          ${rationale ?? null},
+          ${JSON.stringify(beforeState)}::jsonb,
+          ${JSON.stringify(afterState)}::jsonb
+        )
+      `);
+    });
+  } catch (err) {
+    console.error('[override] Transaction failed:', err);
+    return NextResponse.json({ error: 'Database error — override not applied' }, { status: 500 });
+  }
 
   return NextResponse.json({ ok: true, alertId, action });
 }

@@ -65,6 +65,7 @@ interface Filters {
   from: string;
   to: string;
   state: '' | 'active' | 'resolved';
+  search: string;
 }
 
 const ALL_TYPES = Object.keys(EVENT_TYPE_LABELS);
@@ -232,6 +233,7 @@ function initFilters(searchParams: ReturnType<typeof useSearchParams>): Filters 
     state: (['active', 'resolved'].includes(stateParam ?? '')
       ? stateParam
       : '') as Filters['state'],
+    search: searchParams.get('q') ?? '',
   };
 }
 
@@ -264,6 +266,7 @@ export default function MapView() {
     if (filters.from) params.set('from', filters.from);
     if (filters.to) params.set('to', filters.to);
     if (filters.state) params.set('state', filters.state);
+    if (filters.search.trim()) params.set('q', filters.search.trim());
     const qs = params.toString();
     router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false });
   }, [filters, pathname, router]);
@@ -285,6 +288,7 @@ export default function MapView() {
     if (filters.from) params.set('from', filters.from);
     if (filters.to) params.set('to', filters.to);
     if (filters.state) params.set('state', filters.state);
+    if (filters.search.trim()) params.set('q', filters.search.trim());
 
     fetch(`/api/events?${params}`, { signal: controller.signal })
       .then((r) => {
@@ -426,6 +430,7 @@ export default function MapView() {
                   from: '',
                   to: '',
                   state: '',
+                  search: '',
                 })
               }
             >
@@ -551,10 +556,21 @@ export default function MapView() {
           </div>
         </div>
 
+        {/* Search */}
+        <div className="flex-shrink-0 border-b border-slate-200 px-4 py-2">
+          <input
+            type="search"
+            value={filters.search}
+            onChange={(e) => setFilters((p) => ({ ...p, search: e.target.value }))}
+            placeholder="Search events…"
+            className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-teal-500 focus:outline-none"
+          />
+        </div>
+
         {/* Recent events feed */}
         <div className="flex flex-shrink-0 items-center justify-between bg-slate-50 px-4 py-2">
           <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Recent events
+            {filters.search.trim() ? 'Search results' : 'Recent events'}
           </span>
           <span className="text-xs text-slate-400">
             {showLoading ? '…' : `${displayFeed.length} shown`}

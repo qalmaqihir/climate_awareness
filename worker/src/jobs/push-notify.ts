@@ -38,6 +38,10 @@ const TELEGRAM_BATCH_DELAY_MS = 40;
 
 // ─── Subscriber lookup ────────────────────────────────────────────────────────
 
+// Maximum subscribers fetched per notification — prevents OOM on large tables.
+// At 1 SMS/s and 1k subscribers this runs for ~17 min which is the real scale limit.
+const SUBSCRIBER_FETCH_LIMIT = 1_000;
+
 async function findSubscribers(district: string | null): Promise<SubscriberRow[]> {
   // When district is null, notify all active subscribers (GB-wide alert)
   const result = district
@@ -46,15 +50,16 @@ async function findSubscribers(district: string | null): Promise<SubscriberRow[]
         FROM   subscribers
         WHERE  active = true
           AND  (
-            array_length(districts, 1) IS NULL  -- empty array = all regions
-            OR districts = '{}'::text[]
+            districts = '{}'::text[]     -- empty array = subscribed to all regions
             OR ${district} = ANY(districts)
           )
+        LIMIT ${SUBSCRIBER_FETCH_LIMIT}
       `)
     : await db.execute(sql`
         SELECT phone, telegram_chat_id, language
         FROM   subscribers
         WHERE  active = true
+        LIMIT ${SUBSCRIBER_FETCH_LIMIT}
       `);
 
   return result.rows.map((r) => ({
@@ -250,13 +255,17 @@ export async function pushNotify(alert: AlertForPush): Promise<void> {
     `[push] Alert ${alert.id} "${alert.title.slice(0, 60)}": notifying ${subscribers.length} subscriber(s)`,
   );
 
+  // Filter at dispatch time: avoid passing irrelevant rows to each channel
+  const telegramSubs = hasTelegram ? subscribers.filter((s) => s.telegramChatId !== null) : [];
+  const smsSubs = hasTwilio ? subscribers.filter((s) => s.phone !== null) : [];
+
   const results = await Promise.allSettled([
-    hasTelegram
-      ? dispatchTelegram(subscribers, alert, botToken!)
+    telegramSubs.length > 0
+      ? dispatchTelegram(telegramSubs, alert, botToken!)
       : Promise.resolve({ sent: 0, failed: 0 }),
 
-    hasTwilio
-      ? dispatchSms(subscribers, alert, twAccountSid!, twAuthToken!, twFromNumber!)
+    smsSubs.length > 0
+      ? dispatchSms(smsSubs, alert, twAccountSid!, twAuthToken!, twFromNumber!)
       : Promise.resolve({ sent: 0, failed: 0 }),
   ]);
 

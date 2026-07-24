@@ -174,14 +174,38 @@ async function callOpenRouter(
           ? Math.round(parsed.affectedCount)
           : null;
 
+      // Validate enum fields — reject arbitrary LLM strings
+      const VALID_EVENT_TYPES = new Set([
+        'glof',
+        'flood',
+        'landslide',
+        'weather',
+        'earthquake',
+        'general',
+      ]);
+      const VALID_SEVERITIES = new Set(['low', 'moderate', 'high', 'critical']);
+      const eventType =
+        typeof parsed.eventType === 'string' && VALID_EVENT_TYPES.has(parsed.eventType)
+          ? parsed.eventType
+          : 'general';
+      const severity =
+        typeof parsed.severity === 'string' && VALID_SEVERITIES.has(parsed.severity)
+          ? parsed.severity
+          : 'moderate';
+
+      const reasoning =
+        typeof parsed.reasoning === 'string' && parsed.reasoning.trim()
+          ? parsed.reasoning.slice(0, 500)
+          : `Model returned no reasoning (confidence=${confidence})`;
+
       return {
         isDisaster: Boolean(parsed.isDisaster),
         district,
-        eventType: typeof parsed.eventType === 'string' ? parsed.eventType : 'general',
-        severity: typeof parsed.severity === 'string' ? parsed.severity : 'moderate',
+        eventType,
+        severity,
         affectedCount,
         confidence,
-        reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning.slice(0, 500) : '',
+        reasoning,
       };
     } catch (err) {
       // JSON parse errors or network errors — try next model
@@ -264,7 +288,9 @@ export async function verifyAlerts(): Promise<void> {
   const unverified = await fetchUnverified();
 
   if (unverified.length === 0) {
-    console.log('[verify] No unverified alerts — nothing to do');
+    console.log('[verify] No unverified alerts');
+    // Still check for admin-flagged notifications even when nothing needs AI verification
+    await dispatchAdminVerifiedNotifications();
     return;
   }
 
@@ -326,4 +352,53 @@ export async function verifyAlerts(): Promise<void> {
   console.log(
     `[verify] Done — verified=${verified}, suppressed=${suppressed}, pushed=${pushed}, failed=${failed}`,
   );
+
+  // Dispatch push notifications for admin-verified alerts (set by override route)
+  await dispatchAdminVerifiedNotifications();
+}
+
+async function dispatchAdminVerifiedNotifications(): Promise<void> {
+  const result = await db
+    .execute(
+      sql`
+    SELECT id, title, body, level, district, source_url, ai_confidence
+    FROM   alerts
+    WHERE  needs_push_notify = true
+      AND  is_active         = true
+    LIMIT  50
+  `,
+    )
+    .catch(() => null);
+
+  if (!result || result.rows.length === 0) return;
+
+  console.log(`[verify] Dispatching push for ${result.rows.length} admin-verified alert(s)`);
+
+  for (const row of result.rows) {
+    const alertForPush: AlertForPush = {
+      id: row.id as number,
+      title: row.title as string,
+      body: row.body as string,
+      level: row.level as string,
+      district: (row.district as string | null) ?? null,
+      sourceUrl: (row.source_url as string | null) ?? null,
+      aiConfidence: (row.ai_confidence as number | null) ?? 100,
+    };
+
+    await pushNotify(alertForPush).catch((err) =>
+      console.error(
+        `[verify] pushNotify failed for admin-verified alert ${row.id as number}:`,
+        err,
+      ),
+    );
+
+    // Clear the flag regardless of push success to avoid repeated attempts
+    await db
+      .execute(
+        sql`
+      UPDATE alerts SET needs_push_notify = false WHERE id = ${row.id as number}
+    `,
+      )
+      .catch(() => {});
+  }
 }

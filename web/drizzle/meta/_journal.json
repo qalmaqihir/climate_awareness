@@ -71,6 +71,20 @@
       "when": 1784937600000,
       "tag": "0009_leads_submitter_email_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785024000000,
+      "tag": "0010_incident_relations_canonical_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785110400000,
+      "tag": "0011_security_perf_fixes",
+      "breakpoints": true
     }
   ]
 }

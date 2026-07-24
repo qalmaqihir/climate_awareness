@@ -151,6 +151,9 @@ export const alerts = pgTable(
     aiConfidence: smallint('ai_confidence'),
     aiSummary: text('ai_summary'),
     aiVerified: boolean('ai_verified').notNull().default(false),
+    // Set by admin override (action='verify') when push has not yet been dispatched.
+    // Cleared by verify-alerts worker after push completes.
+    needsPushNotify: boolean('needs_push_notify').notNull().default(false),
   },
   (t) => [
     index('alerts_is_active_idx').on(t.isActive),
@@ -434,7 +437,12 @@ export const subscribers = pgTable(
 // Expired rows are cleaned up by the worker cleanup job.
 export const smsOtps = pgTable('sms_otps', {
   phone: text('phone').primaryKey(),
+  // SHA-256 hex digest of the 6-digit code — never stored plaintext
   code: text('code').notNull(),
+  // Districts validated at /subscribe time; trusted here so /verify ignores client-supplied list
+  districts: text('districts').array().notNull().default([]),
+  // Failed attempt counter — OTP is invalidated after 5 failures
+  attemptCount: smallint('attempt_count').notNull().default(0),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

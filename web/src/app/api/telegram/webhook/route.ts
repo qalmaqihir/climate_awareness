@@ -434,19 +434,20 @@ async function processUpdate(update: TelegramUpdate): Promise<void> {
 
 // ─── Route handlers ───────────────────────────────────────────────────────────
 
-export async function GET(): Promise<NextResponse> {
-  return NextResponse.json({ ok: true, service: 'telegram-webhook' });
-}
+// GET intentionally absent — no info disclosure of webhook path
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  // Verify the secret token header Telegram sends on every webhook request
+  // TELEGRAM_SECRET_TOKEN is mandatory. Without it every POST would be accepted from any source.
   const secretToken = process.env.TELEGRAM_SECRET_TOKEN;
-  if (secretToken) {
-    const provided = req.headers.get('x-telegram-bot-api-secret-token');
-    if (provided !== secretToken) {
-      console.warn('[tg] Webhook request rejected — invalid secret token');
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  if (!secretToken) {
+    console.error('[tg] TELEGRAM_SECRET_TOKEN not set — rejecting all webhook requests');
+    return NextResponse.json({ error: 'Webhook not configured' }, { status: 503 });
+  }
+
+  const provided = req.headers.get('x-telegram-bot-api-secret-token');
+  if (provided !== secretToken) {
+    console.warn('[tg] Webhook request rejected — invalid secret token');
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   let update: TelegramUpdate;
