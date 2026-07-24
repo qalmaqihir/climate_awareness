@@ -41,12 +41,24 @@ const authMiddleware = auth((req) => {
 
   const path = req.nextUrl.pathname;
   const isAdminRoute = path.startsWith('/admin');
-  const isLoginPage = path === '/admin/login';
+  const isAdminLoginPage = path === '/admin/login';
+  const isReportRoute = path === '/report';
+  const isContributorLoginPage = path === '/login';
 
   // Admin routes require an active session AND isAdmin=true.
   // Contributor sessions (role='contributor') are redirected — they cannot access /admin.
-  if (isAdminRoute && !isLoginPage && (!req.auth || !req.auth.user?.isAdmin)) {
+  if (isAdminRoute && !isAdminLoginPage && (!req.auth || !req.auth.user?.isAdmin)) {
     const loginUrl = new URL('/admin/login', req.url);
+    loginUrl.searchParams.set('callbackUrl', path);
+    const res = NextResponse.redirect(loginUrl);
+    res.headers.set('Content-Security-Policy', csp);
+    SECURITY_HEADERS.forEach(([k, v]) => res.headers.set(k, v));
+    return res;
+  }
+
+  // /report requires any authenticated session (admin or contributor).
+  if (isReportRoute && !isContributorLoginPage && !req.auth?.user?.email) {
+    const loginUrl = new URL('/login', req.url);
     loginUrl.searchParams.set('callbackUrl', path);
     const res = NextResponse.redirect(loginUrl);
     res.headers.set('Content-Security-Policy', csp);
