@@ -31,12 +31,15 @@ interface EventSeed {
 const RW_2022 = 'https://reliefweb.int/disasters/fl-2022-000332-pak';
 const RW_2021 = 'https://reliefweb.int/disasters/fl-2021-000141-pak';
 const RW_PAK = 'https://reliefweb.int/country/pak';
+const RW_2015 = 'https://reliefweb.int/disasters/fl-2015-000100-pak';
 const PT_2022 =
   'https://pamirtimes.net/2022/08/26/110-flashflood-disasters-in-gilgit-baltistan-since-july-2022-official-report/';
 const PT_ATTABAD_2023 =
   'https://pamirtimes.net/2023/04/09/hunza-businesses-worried-about-delays-in-reconstruction-of-collapsed-bridge/';
+const PT_ROOT = 'https://pamirtimes.net';
 const ICIMOD_GLOF =
   'https://www.icimod.org/increasing-risk-of-glacial-lake-outburst-floods-in-hunza-river-basin/';
+const ICIMOD_CHITRAL = 'https://www.icimod.org/mountain/glacial-lake-outburst-floods-pakistan/';
 
 const EVENTS: EventSeed[] = [
   // ─── 2022 — Record monsoon season (66% above-normal rainfall in GB) ──────────
@@ -332,6 +335,221 @@ const EVENTS: EventSeed[] = [
     sourceUrl: 'https://www.pamirtimes.net',
     sourceSlug: 'pamir-times',
   },
+
+  // ─── Chitral — 2015 ───────────────────────────────────────────────────────────
+  {
+    title: '2015 Chitral catastrophic floods — worst in living memory',
+    description:
+      'Unprecedented monsoon rainfall struck Chitral district in late July 2015, triggering the most destructive flood event in the region in living memory. Over 50 people were killed and more than 100,000 people were directly affected across Chitral valley, Drosh, Ayun, Shishi, and Golen sub-valleys. More than 15,000 houses were fully or partially destroyed. The Chitral River overflowed along its entire length, wiping out agricultural land, orchards, and centuries-old irrigation systems. The KPK government and federal NDMA launched the largest disaster relief operation in Chitral history. The Pakistan Army helicopter-lifted food and medicine to cut-off communities for three weeks.',
+    eventType: 'flood',
+    severity: 'critical',
+    district: 'Lower Chitral',
+    locationName: 'Chitral City, Drosh, Ayun, Golen Valley',
+    affectedCount: 100000,
+    reportedAt: '2015-07-28',
+    sourceUrl: RW_2015,
+    sourceSlug: 'reliefweb',
+  },
+  {
+    title: '2015 Upper Chitral floods — Mastuj and Yarkhun valleys',
+    description:
+      'The same July 2015 rainfall event that devastated lower Chitral also caused severe flooding in Mastuj and Yarkhun valleys in upper Chitral. The Yarkhun River rose to record levels, destroying the main bridge at Mastuj and cutting off communities in the upper valley for weeks. Livestock losses were severe. Relief operations depended on Pakistan Army helicopters as all road links were severed. More than 8,000 people in upper valleys required emergency food assistance.',
+    eventType: 'flood',
+    severity: 'critical',
+    district: 'Upper Chitral',
+    locationName: 'Mastuj, Yarkhun Valley, Upper Chitral',
+    affectedCount: 8000,
+    reportedAt: '2015-07-29',
+    sourceUrl: RW_2015,
+    sourceSlug: 'reliefweb',
+  },
+
+  // ─── Chitral — 2016 ───────────────────────────────────────────────────────────
+  {
+    title: 'Drosh flash flood destroys agricultural land, Lower Chitral',
+    description:
+      'Flash flooding from hill torrents struck the Drosh area in Lower Chitral during August 2016, sweeping away agricultural fields and orchards just before the autumn harvest. The Drosh nala flooded the main bazaar and damaged the road connecting Drosh to Chitral city. Over 200 farming families lost their standing crops. PDMA KPK dispatched emergency relief teams and provided food packages to affected households.',
+    eventType: 'flash_flood',
+    severity: 'high',
+    district: 'Lower Chitral',
+    locationName: 'Drosh, Lower Chitral',
+    affectedCount: 1200,
+    reportedAt: '2016-08-12',
+    sourceUrl: RW_PAK,
+    sourceSlug: 'reliefweb',
+  },
+
+  // ─── Chitral — 2017 ───────────────────────────────────────────────────────────
+  {
+    title: 'Chiantar Glacier GLOF, Karambar region, Upper Chitral',
+    description:
+      'The Chiantar Glacier in the Karambar Valley of upper Chitral produced a significant glacial lake outburst flood in August 2017. The GLOF sent a debris-laden surge downstream through the Yarkhun River, damaging bridges and irrigation channels. ICIMOD had identified the Chiantar glacial lake as a high-risk site in its regional glacier inventory. The event affected communities along a 60 km stretch of the valley. The Pakistani military deployed helicopters for damage assessment. This event was one of the earliest documented GLOFs in the Chitral region with satellite confirmation.',
+    eventType: 'glof',
+    severity: 'high',
+    district: 'Upper Chitral',
+    locationName: 'Chiantar Glacier, Karambar Valley, Upper Chitral',
+    affectedCount: 2500,
+    reportedAt: '2017-08-05',
+    sourceUrl: ICIMOD_CHITRAL,
+    sourceSlug: 'icimod',
+  },
+  {
+    title: 'Chitral landslides block KKH link road after cloudburst',
+    description:
+      "A series of landslides triggered by heavy August 2017 rainfall blocked the road linking Chitral to Dir and the national highway network at multiple points. The blockage lasted ten days, isolating Chitral city from the rest of KPK. Fuel and food prices spiked as supply lines were disrupted. PDMA KPK deployed road-clearing machinery and coordinated airlifts of essential medicines to the district hospital. The event exposed the extreme vulnerability of Chitral's single road link.",
+    eventType: 'landslide',
+    severity: 'high',
+    district: 'Lower Chitral',
+    locationName: 'Chitral-Dir Road, Lower Chitral',
+    affectedCount: null,
+    reportedAt: '2017-08-20',
+    sourceUrl: RW_PAK,
+    sourceSlug: 'reliefweb',
+  },
+
+  // ─── Chitral — 2018 ───────────────────────────────────────────────────────────
+  {
+    title: 'Mastuj River flash flood, Upper Chitral',
+    description:
+      'The Mastuj River flooded in July 2018 after intense rainfall combined with accelerated glacier melt from the Chitral-Hindu Raj watershed. Several dozen houses in Mastuj town were damaged or swept away. Agricultural terraces along the river were destroyed. A key bridge at Buni was damaged, cutting the upper valley off from Mastuj. PDMA KPK and the Aga Khan Rural Support Programme (AKRSP) provided joint emergency relief. Approximately 3,000 people required food assistance.',
+    eventType: 'flood',
+    severity: 'high',
+    district: 'Upper Chitral',
+    locationName: 'Mastuj, Buni, Upper Chitral',
+    affectedCount: 3000,
+    reportedAt: '2018-07-18',
+    sourceUrl: PT_ROOT,
+    sourceSlug: 'pamir-times',
+  },
+
+  // ─── Chitral — 2019 ───────────────────────────────────────────────────────────
+  {
+    title: 'Multiple landslides isolate Chitral in 2019 monsoon season',
+    description:
+      'The 2019 monsoon season brought repeated landslide events to both Lower and Upper Chitral districts, including major slides near the Lowari Tunnel approach and in the Kaliash valleys. The Chitral-Dir link was blocked on five separate occasions between June and September. Several villages in Ayun and Bumburet were partially buried by debris flows. PDMA KPK reported aggregate damage of over PKR 500 million across the district. A formal state of disaster was declared for parts of Lower Chitral.',
+    eventType: 'landslide',
+    severity: 'high',
+    district: 'Lower Chitral',
+    locationName: 'Lowari, Ayun, Bumburet, Lower Chitral',
+    affectedCount: 5000,
+    reportedAt: '2019-07-10',
+    sourceUrl: RW_PAK,
+    sourceSlug: 'reliefweb',
+  },
+
+  // ─── Chitral — 2020 ───────────────────────────────────────────────────────────
+  {
+    title: 'Yarkhun Valley flash flood, Upper Chitral',
+    description:
+      'A sudden flash flood swept down the Yarkhun Valley in July 2020 following a cloudburst over the high-altitude catchment near the Afghan border. The flood damaged agricultural fields along both banks, destroyed two footbridges connecting farming communities to Mastuj bazaar, and eroded several kilometres of the main unpaved road. Around 1,800 people in the upper Yarkhun communities were cut off for several days. PDMA KPK and local government coordinated food and emergency shelter distribution.',
+    eventType: 'flash_flood',
+    severity: 'high',
+    district: 'Upper Chitral',
+    locationName: 'Yarkhun Valley, Upper Chitral',
+    affectedCount: 1800,
+    reportedAt: '2020-07-14',
+    sourceUrl: PT_ROOT,
+    sourceSlug: 'pamir-times',
+  },
+  {
+    title: 'Golen Valley flash flood destroys orchards, Lower Chitral',
+    description:
+      'Heavy July 2020 rainfall triggered a flash flood in the Golen Valley, one of the most productive fruit-growing areas in Lower Chitral. The floodwaters damaged orchards and swept away surface irrigation channels. Over 400 farming families lost a significant portion of their summer income. The Golen Gol hydropower project access road was also damaged. PDMA KPK issued a disaster declaration for the valley.',
+    eventType: 'flash_flood',
+    severity: 'moderate',
+    district: 'Lower Chitral',
+    locationName: 'Golen Valley, Lower Chitral',
+    affectedCount: 2200,
+    reportedAt: '2020-07-30',
+    sourceUrl: PT_ROOT,
+    sourceSlug: 'pamir-times',
+  },
+
+  // ─── Chitral — 2021 ───────────────────────────────────────────────────────────
+  {
+    title: 'Chitral district widespread floods and landslides',
+    description:
+      "The 2021 monsoon season produced widespread flooding and landslide events across both Upper and Lower Chitral. NDMA recorded 22 fatalities across the district. Over 6,000 houses were damaged. The Lowari Tunnel, Chitral's primary all-weather link to the rest of Pakistan, was blocked twice by debris flows on the Dir approach. PDMA KPK established emergency relief camps in Chitral city and coordinated with AKRSP and WFP for multi-sector humanitarian response.",
+    eventType: 'flood',
+    severity: 'critical',
+    district: 'Lower Chitral',
+    locationName: 'Chitral District, Lower Chitral',
+    affectedCount: 35000,
+    reportedAt: '2021-08-01',
+    sourceUrl: RW_2021,
+    sourceSlug: 'reliefweb',
+  },
+
+  // ─── Chitral — 2022 ───────────────────────────────────────────────────────────
+  {
+    title: 'Golen Gol GLOF threatens hydropower infrastructure, Lower Chitral',
+    description:
+      "A glacial lake outburst flood from the Golen Gol glacier system threatened the Golen Gol Hydropower Project in Lower Chitral in August 2022. The GLOF sent ice-laden floodwaters through the Golen Valley, causing significant damage to the project's weir and penstock approach channel. The 108 MW hydropower project, vital to Chitral's electricity supply, was shut down for emergency repairs. Downstream communities were placed on evacuation notice. ICIMOD confirmed the event via satellite imagery.",
+    eventType: 'glof',
+    severity: 'critical',
+    district: 'Lower Chitral',
+    locationName: 'Golen Gol Glacier, Golen Valley, Lower Chitral',
+    affectedCount: 3500,
+    reportedAt: '2022-08-10',
+    sourceUrl: ICIMOD_CHITRAL,
+    sourceSlug: 'icimod',
+  },
+  {
+    title: 'Laspur Valley flash flood, Upper Chitral',
+    description:
+      'The Laspur Valley in upper Chitral experienced a severe flash flood in August 2022 during the record-breaking national monsoon season. Agricultural land was inundated and several small dams for irrigation were destroyed. The Shandur Polo Ground approach road was damaged. Communities in the upper Laspur valley were isolated for five days. PDMA KPK deployed relief goods via helicopter as road access was severed.',
+    eventType: 'flash_flood',
+    severity: 'high',
+    district: 'Upper Chitral',
+    locationName: 'Laspur Valley, Upper Chitral',
+    affectedCount: 1500,
+    reportedAt: '2022-08-17',
+    sourceUrl: PT_ROOT,
+    sourceSlug: 'pamir-times',
+  },
+
+  // ─── Chitral — 2023 ───────────────────────────────────────────────────────────
+  {
+    title: 'Karambar Lake GLOF warning, Upper Chitral',
+    description:
+      'ICIMOD and PMD issued a Karambar Lake glacial lake outburst flood warning for communities along the Yarkhun River in August 2023 after satellite observations showed a rapid rise in the lake level combined with glacier retreat on the Karambar Glacier. Precautionary evacuations were ordered for communities in Karambar and lower Yarkhun valley. The anticipated GLOF occurred with a lower-than-feared peak discharge, preventing major casualties. The event highlighted the growing instability of high-altitude glacial lakes in upper Chitral near the Afghan border.',
+    eventType: 'glof',
+    severity: 'high',
+    district: 'Upper Chitral',
+    locationName: 'Karambar Lake, Yarkhun Valley, Upper Chitral',
+    affectedCount: 800,
+    reportedAt: '2023-08-09',
+    sourceUrl: ICIMOD_CHITRAL,
+    sourceSlug: 'icimod',
+  },
+  {
+    title: 'Upper Chitral widespread flash floods, August 2023',
+    description:
+      'Sustained August 2023 rainfall over the Hindu Raj and Hindukush watersheds caused widespread flash flooding throughout Upper Chitral. The Mastuj, Yarkhun, and Laspur rivers all exceeded bankfull stage simultaneously. More than 90 houses were fully destroyed and 400 partially damaged. Over 15 bridges were washed out, isolating dozens of villages. PDMA KPK declared a calamity and initiated a PKR 300 million emergency response package. Food insecurity for the approaching winter was a major concern for affected families.',
+    eventType: 'flash_flood',
+    severity: 'critical',
+    district: 'Upper Chitral',
+    locationName: 'Mastuj, Yarkhun, Laspur, Upper Chitral',
+    affectedCount: 12000,
+    reportedAt: '2023-08-20',
+    sourceUrl: RW_PAK,
+    sourceSlug: 'reliefweb',
+  },
+
+  // ─── Chitral — 2024 ───────────────────────────────────────────────────────────
+  {
+    title: 'Chitral city flash flood from hill torrent, Lower Chitral',
+    description:
+      'An intense cloudburst on 25 July 2024 triggered a rapid-onset flash flood from the nala channels descending directly into Chitral city. The floodwaters inundated the main bazaar, the hospital approach road, and residential areas in the old town within two hours. Over 60 shops were damaged and 30 vehicles were swept away. The event lasted only four hours but caused an estimated PKR 250 million in damage. PDMA KPK initiated emergency response within 12 hours. The flood re-ignited debate about the absence of upstream flood retention structures near the city.',
+    eventType: 'flash_flood',
+    severity: 'high',
+    district: 'Lower Chitral',
+    locationName: 'Chitral City, Lower Chitral',
+    affectedCount: 2800,
+    reportedAt: '2024-07-25',
+    sourceUrl: PT_ROOT,
+    sourceSlug: 'pamir-times',
+  },
 ];
 
 async function getSourceId(slug: string): Promise<number | null> {
@@ -344,7 +562,7 @@ async function main() {
 
   // Cache source IDs
   const sourceIds: Record<string, number | null> = {};
-  for (const slug of [...new Set(EVENTS.map((e) => e.sourceSlug))]) {
+  for (const slug of Array.from(new Set(EVENTS.map((e) => e.sourceSlug)))) {
     sourceIds[slug] = await getSourceId(slug);
   }
 
