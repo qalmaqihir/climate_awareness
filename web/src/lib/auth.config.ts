@@ -1,4 +1,5 @@
 import type { NextAuthConfig } from 'next-auth';
+import type { UserRole } from './schema';
 
 /**
  * Edge-safe auth config — no Node.js built-ins (no pg, no bcrypt, no adapter).
@@ -13,11 +14,18 @@ export const authConfig: NextAuthConfig = {
   providers: [],
   callbacks: {
     jwt({ token, user }) {
-      if (user) token.isAdmin = (user as { isAdmin?: boolean }).isAdmin ?? false;
+      if (user) {
+        const u = user as { role?: UserRole; isAdmin?: boolean };
+        token.role = u.role ?? 'admin';
+        token.isAdmin = u.isAdmin ?? false;
+      }
       return token;
     },
     session({ session, token }) {
-      if (session.user) session.user.isAdmin = (token.isAdmin as boolean) ?? false;
+      if (session.user) {
+        session.user.role = (token.role as UserRole | undefined) ?? 'admin';
+        session.user.isAdmin = (token.isAdmin as boolean) ?? false;
+      }
       return session;
     },
   },

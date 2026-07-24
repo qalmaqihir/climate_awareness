@@ -43,7 +43,9 @@ const authMiddleware = auth((req) => {
   const isAdminRoute = path.startsWith('/admin');
   const isLoginPage = path === '/admin/login';
 
-  if (isAdminRoute && !isLoginPage && !req.auth) {
+  // Admin routes require an active session AND isAdmin=true.
+  // Contributor sessions (role='contributor') are redirected — they cannot access /admin.
+  if (isAdminRoute && !isLoginPage && (!req.auth || !req.auth.user?.isAdmin)) {
     const loginUrl = new URL('/admin/login', req.url);
     loginUrl.searchParams.set('callbackUrl', path);
     const res = NextResponse.redirect(loginUrl);
