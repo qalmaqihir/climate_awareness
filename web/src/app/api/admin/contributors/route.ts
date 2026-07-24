@@ -2,9 +2,10 @@ import { NextResponse } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { hash } from 'bcryptjs';
 import { z } from 'zod';
-import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { users } from '@/lib/schema';
+import { withApiHandler, AppError } from '@/lib/api-error';
+import { requireAdmin } from '@/lib/auth-guard';
 
 function parseAdminEmails(raw: string): string[] {
   const s = raw.trim();
@@ -33,11 +34,8 @@ const postSchema = z.object({
   password: z.string().min(8).max(128),
 });
 
-export async function GET() {
-  const session = await auth();
-  if (!session?.user?.isAdmin) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
+export const GET = withApiHandler(async () => {
+  await requireAdmin();
 
   const contributors = await db
     .select({
@@ -51,19 +49,16 @@ export async function GET() {
     .orderBy(users.email);
 
   return NextResponse.json({ contributors });
-}
+});
 
-export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user?.isAdmin) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
+export const POST = withApiHandler(async (req: Request) => {
+  await requireAdmin();
 
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+    throw new AppError(400, 'Invalid JSON');
   }
 
   const parsed = postSchema.safeParse(body);
@@ -75,10 +70,7 @@ export async function POST(req: Request) {
 
   // Prevent granting contributor role to admin-designated addresses
   if (ADMIN_EMAILS.includes(email)) {
-    return NextResponse.json(
-      { error: 'That email is already designated as an admin' },
-      { status: 422 },
-    );
+    throw new AppError(422, 'That email is already designated as an admin');
   }
 
   // Reject if a user record already exists for this email
@@ -87,9 +79,7 @@ export async function POST(req: Request) {
     .from(users)
     .where(eq(users.email, email))
     .limit(1);
-  if (existing) {
-    return NextResponse.json({ error: 'A user with that email already exists' }, { status: 409 });
-  }
+  if (existing) throw new AppError(409, 'A user with that email already exists');
 
   const passwordHash = await hash(password, 12);
 
@@ -105,4 +95,4 @@ export async function POST(req: Request) {
     .returning({ id: users.id, email: users.email, name: users.name });
 
   return NextResponse.json({ contributor: created }, { status: 201 });
-}
+});

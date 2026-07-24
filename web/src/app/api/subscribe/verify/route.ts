@@ -145,14 +145,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const validDistricts = (otpRow.districts as string[]) ?? [];
 
   // Upsert subscriber — handles both fresh signups and re-activations
-  await db.execute(sql`
-    INSERT INTO subscribers (phone, districts, language, active)
-    VALUES (${phone}, ${validDistricts}, 'en', true)
-    ON CONFLICT (phone) DO UPDATE SET
-      districts  = ${validDistricts},
-      active     = true,
-      opt_out_at = NULL
-  `);
+  const upsertResult = await db
+    .execute(
+      sql`
+      INSERT INTO subscribers (phone, districts, language, active)
+      VALUES (${phone}, ${validDistricts}, 'en', true)
+      ON CONFLICT (phone) DO UPDATE SET
+        districts  = ${validDistricts},
+        active     = true,
+        opt_out_at = NULL
+    `,
+    )
+    .catch(() => null);
+
+  if (!upsertResult) {
+    return NextResponse.json(
+      { error: 'Subscription could not be saved. Please try again.' },
+      { status: 500 },
+    );
+  }
 
   // Remove consumed OTP
   await db.execute(sql`DELETE FROM sms_otps WHERE phone = ${phone}`).catch(() => {});

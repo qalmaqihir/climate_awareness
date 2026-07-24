@@ -5,59 +5,84 @@ import { verifyAlerts } from './jobs/verify-alerts.js';
 import { embedUnindexedEvents } from './jobs/embed-events.js';
 import { runCleanup } from './jobs/cleanup.js';
 import { pool } from './db.js';
+import { createLogger } from './logger.js';
 
-console.log('[worker] Starting Northern Pakistan Climate Watch worker');
+const logger = createLogger('worker');
+
+logger.info('Starting Northern Pakistan Climate Watch worker');
 
 if (!process.env.DATABASE_URL) {
-  console.error('[worker] DATABASE_URL not set');
+  logger.error('DATABASE_URL not set');
   process.exit(1);
 }
 
 // Weather refresh every 6 hours
 cron.schedule('0 */6 * * *', async () => {
-  console.log('[cron] Triggering weather refresh');
-  await refreshWeather().catch((e) => console.error('[cron] weather error:', e));
+  logger.info('Triggering weather refresh');
+  await refreshWeather().catch((e: unknown) =>
+    logger.error('Weather job failed', { error: e instanceof Error ? e.message : String(e) }),
+  );
 });
 
 // Alert scraper: hourly — pulls from ReliefWeb, Pamir Times, GDACS
 cron.schedule('0 * * * *', async () => {
-  console.log('[cron] Triggering alert check');
-  await checkAlerts().catch((e) => console.error('[cron] alerts error:', e));
+  logger.info('Triggering alert check');
+  await checkAlerts().catch((e: unknown) =>
+    logger.error('Alerts job failed', { error: e instanceof Error ? e.message : String(e) }),
+  );
 });
 
 // AI verification: runs 5 min after the alert scraper to catch newly inserted rows
 cron.schedule('5,20,35,50 * * * *', async () => {
-  console.log('[cron] Triggering AI alert verification');
-  await verifyAlerts().catch((e) => console.error('[cron] verify error:', e));
+  logger.info('Triggering AI alert verification');
+  await verifyAlerts().catch((e: unknown) =>
+    logger.error('Verify job failed', { error: e instanceof Error ? e.message : String(e) }),
+  );
 });
 
 // Embed unindexed events every 15 minutes
 cron.schedule('*/15 * * * *', async () => {
-  console.log('[cron] Triggering embedding job');
-  await embedUnindexedEvents().catch((e) => console.error('[cron] embed error:', e));
+  logger.info('Triggering embedding job');
+  await embedUnindexedEvents().catch((e: unknown) =>
+    logger.error('Embed job failed', { error: e instanceof Error ? e.message : String(e) }),
+  );
 });
 
 // Prune old query_logs and expired sms_otps daily at 03:00
 cron.schedule('0 3 * * *', async () => {
-  console.log('[cron] Triggering cleanup job');
-  await runCleanup().catch((e) => console.error('[cron] cleanup error:', e));
+  logger.info('Triggering cleanup job');
+  await runCleanup().catch((e: unknown) =>
+    logger.error('Cleanup job failed', { error: e instanceof Error ? e.message : String(e) }),
+  );
 });
 
-console.log('[worker] Crons scheduled. Running initial jobs…');
+logger.info('Crons scheduled. Running initial jobs…');
 
 // Startup sequence: scrape first so new alerts exist, then immediately verify them
-await checkAlerts().catch((e) => console.error('[startup] alerts error:', e));
+await checkAlerts().catch((e: unknown) =>
+  logger.error('Startup alerts job failed', { error: e instanceof Error ? e.message : String(e) }),
+);
 await Promise.all([
-  refreshWeather().catch((e) => console.error('[startup] weather error:', e)),
-  verifyAlerts().catch((e) => console.error('[startup] verify error:', e)),
-  embedUnindexedEvents().catch((e) => console.error('[startup] embed error:', e)),
+  refreshWeather().catch((e: unknown) =>
+    logger.error('Startup weather job failed', {
+      error: e instanceof Error ? e.message : String(e),
+    }),
+  ),
+  verifyAlerts().catch((e: unknown) =>
+    logger.error('Startup verify job failed', {
+      error: e instanceof Error ? e.message : String(e),
+    }),
+  ),
+  embedUnindexedEvents().catch((e: unknown) =>
+    logger.error('Startup embed job failed', { error: e instanceof Error ? e.message : String(e) }),
+  ),
 ]);
 
-console.log('[worker] Ready. Waiting for scheduled triggers.');
+logger.info('Ready. Waiting for scheduled triggers.');
 
 // Graceful shutdown — handles both Docker SIGTERM and dev Ctrl-C
 async function shutdown(signal: string): Promise<void> {
-  console.log(`[worker] ${signal} received, shutting down`);
+  logger.info(`${signal} received, shutting down`);
   await pool.end();
   process.exit(0);
 }

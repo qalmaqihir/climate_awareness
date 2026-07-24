@@ -19,6 +19,9 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../db.js';
 import { pushNotify, type AlertForPush } from './push-notify.js';
+import { createLogger } from '../logger.js';
+
+const logger = createLogger('verify');
 
 const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
 const MODELS = [
@@ -144,20 +147,20 @@ async function callOpenRouter(
 
       if (!res.ok) {
         const text = await res.text().catch(() => '');
-        console.warn(`[verify] ${model} HTTP ${res.status}: ${text.slice(0, 200)}`);
+        logger.warn(`${model} HTTP ${res.status}`, { body: text.slice(0, 200) });
         continue;
       }
 
       const json = (await res.json()) as OpenRouterResponse;
 
       if (json.error) {
-        console.warn(`[verify] ${model} API error: ${json.error.message}`);
+        logger.warn(`${model} API error`, { message: json.error.message });
         continue;
       }
 
       const content = json.choices?.[0]?.message?.content ?? '';
       if (!content) {
-        console.warn(`[verify] ${model} returned empty content`);
+        logger.warn(`${model} returned empty content`);
         continue;
       }
 
@@ -209,7 +212,7 @@ async function callOpenRouter(
       };
     } catch (err) {
       // JSON parse errors or network errors — try next model
-      console.warn(`[verify] ${model} failed:`, err instanceof Error ? err.message : err);
+      logger.warn(`${model} failed`, { error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -219,14 +222,25 @@ async function callOpenRouter(
 // ─── DB helpers ───────────────────────────────────────────────────────────────
 
 async function fetchUnverified(): Promise<AlertRow[]> {
-  const result = await db.execute(sql`
+  const result = await db
+    .execute(
+      sql`
     SELECT id, title, body, level, district, source_url
     FROM   alerts
     WHERE  ai_verified = false
       AND  is_active   = true
     ORDER  BY issued_at DESC
     LIMIT  ${MAX_PER_RUN}
-  `);
+  `,
+    )
+    .catch((err: unknown) => {
+      logger.error('Failed to fetch unverified alerts', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    });
+
+  if (!result) return [];
 
   return result.rows.map((r) => ({
     id: r.id as number,
@@ -265,13 +279,22 @@ async function applyVerificationResult(
 
 async function applyFailedVerification(alertId: number): Promise<void> {
   // Mark as processed with confidence=0 so it doesn't block future runs
-  await db.execute(sql`
-    UPDATE alerts
-    SET    ai_verified   = true,
-           ai_confidence = 0,
-           ai_summary    = 'AI verification failed — all models returned errors.'
-    WHERE  id = ${alertId}
-  `);
+  await db
+    .execute(
+      sql`
+      UPDATE alerts
+      SET    ai_verified   = true,
+             ai_confidence = 0,
+             ai_summary    = 'AI verification failed — all models returned errors.'
+      WHERE  id = ${alertId}
+    `,
+    )
+    .catch((err: unknown) => {
+      logger.error('Failed to mark alert as failed-verification', {
+        alertId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
 }
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
@@ -279,7 +302,7 @@ async function applyFailedVerification(alertId: number): Promise<void> {
 export async function verifyAlerts(): Promise<void> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
-    console.log('[verify] OPENROUTER_API_KEY not set — skipping AI verification');
+    logger.info('OPENROUTER_API_KEY not set — skipping AI verification');
     return;
   }
 
@@ -288,13 +311,13 @@ export async function verifyAlerts(): Promise<void> {
   const unverified = await fetchUnverified();
 
   if (unverified.length === 0) {
-    console.log('[verify] No unverified alerts');
+    logger.debug('No unverified alerts');
     // Still check for admin-flagged notifications even when nothing needs AI verification
     await dispatchAdminVerifiedNotifications();
     return;
   }
 
-  console.log(`[verify] Processing ${unverified.length} unverified alert(s)`);
+  logger.info(`Processing unverified alerts`, { count: unverified.length });
 
   let verified = 0;
   let suppressed = 0;
@@ -315,9 +338,11 @@ export async function verifyAlerts(): Promise<void> {
 
       if (result.confidence < SUPPRESS_THRESHOLD) {
         suppressed++;
-        console.log(
-          `[verify] Alert ${alert.id} suppressed (confidence=${result.confidence}): ${result.reasoning}`,
-        );
+        logger.info('Alert suppressed', {
+          alertId: alert.id,
+          confidence: result.confidence,
+          reasoning: result.reasoning,
+        });
       } else {
         verified++;
 
@@ -332,26 +357,32 @@ export async function verifyAlerts(): Promise<void> {
             aiConfidence: result.confidence,
           };
 
-          await pushNotify(alertForPush).catch((err) =>
-            console.error(`[verify] pushNotify failed for alert ${alert.id}:`, err),
+          await pushNotify(alertForPush).catch((err: unknown) =>
+            logger.error('pushNotify failed', {
+              alertId: alert.id,
+              error: err instanceof Error ? err.message : String(err),
+            }),
           );
           pushed++;
         }
 
-        console.log(
-          `[verify] Alert ${alert.id} verified (confidence=${result.confidence}, isDisaster=${result.isDisaster})`,
-        );
+        logger.info('Alert verified', {
+          alertId: alert.id,
+          confidence: result.confidence,
+          isDisaster: result.isDisaster,
+        });
       }
     } catch (err) {
-      console.error(`[verify] Unexpected error for alert ${alert.id}:`, err);
-      await applyFailedVerification(alert.id).catch(() => {});
+      logger.error('Unexpected error processing alert', {
+        alertId: alert.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      await applyFailedVerification(alert.id);
       failed++;
     }
   }
 
-  console.log(
-    `[verify] Done — verified=${verified}, suppressed=${suppressed}, pushed=${pushed}, failed=${failed}`,
-  );
+  logger.info('Verification run complete', { verified, suppressed, pushed, failed });
 
   // Dispatch push notifications for admin-verified alerts (set by override route)
   await dispatchAdminVerifiedNotifications();
@@ -372,11 +403,12 @@ async function dispatchAdminVerifiedNotifications(): Promise<void> {
 
   if (!result || result.rows.length === 0) return;
 
-  console.log(`[verify] Dispatching push for ${result.rows.length} admin-verified alert(s)`);
+  logger.info('Dispatching push for admin-verified alerts', { count: result.rows.length });
 
   for (const row of result.rows) {
+    const alertId = row.id as number;
     const alertForPush: AlertForPush = {
-      id: row.id as number,
+      id: alertId,
       title: row.title as string,
       body: row.body as string,
       level: row.level as string,
@@ -385,20 +417,21 @@ async function dispatchAdminVerifiedNotifications(): Promise<void> {
       aiConfidence: (row.ai_confidence as number | null) ?? 100,
     };
 
-    await pushNotify(alertForPush).catch((err) =>
-      console.error(
-        `[verify] pushNotify failed for admin-verified alert ${row.id as number}:`,
-        err,
-      ),
+    await pushNotify(alertForPush).catch((err: unknown) =>
+      logger.error('pushNotify failed for admin-verified alert', {
+        alertId,
+        error: err instanceof Error ? err.message : String(err),
+      }),
     );
 
     // Clear the flag regardless of push success to avoid repeated attempts
     await db
-      .execute(
-        sql`
-      UPDATE alerts SET needs_push_notify = false WHERE id = ${row.id as number}
-    `,
-      )
-      .catch(() => {});
+      .execute(sql`UPDATE alerts SET needs_push_notify = false WHERE id = ${alertId}`)
+      .catch((err: unknown) =>
+        logger.error('Failed to clear needs_push_notify flag', {
+          alertId,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
   }
 }

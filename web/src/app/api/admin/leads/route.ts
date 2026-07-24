@@ -1,8 +1,9 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod/v4';
-import { auth } from '@/lib/auth';
 import { getLeads, LEADS_PER_PAGE } from '@/lib/leads-queries';
 import type { LeadState } from '@/lib/schema';
+import { withApiHandler } from '@/lib/api-error';
+import { requireAdmin } from '@/lib/auth-guard';
 
 const VALID_STATES: LeadState[] = [
   'submitted',
@@ -18,11 +19,8 @@ const querySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
 });
 
-export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.isAdmin) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
+export const GET = withApiHandler(async (req: NextRequest) => {
+  await requireAdmin();
 
   const params = Object.fromEntries(req.nextUrl.searchParams);
   const parsed = querySchema.safeParse(params);
@@ -33,10 +31,11 @@ export async function GET(req: NextRequest) {
   const { state, page } = parsed.data;
   const offset = (page - 1) * LEADS_PER_PAGE;
   const rows = await getLeads({ state }, LEADS_PER_PAGE, offset);
+
   return NextResponse.json({
     leads: rows,
     page,
     perPage: LEADS_PER_PAGE,
     hasMore: rows.length === LEADS_PER_PAGE,
   });
-}
+});

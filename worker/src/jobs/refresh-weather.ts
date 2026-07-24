@@ -4,6 +4,9 @@
  */
 import { db } from '../db.js';
 import { sql } from 'drizzle-orm';
+import { createLogger } from '../logger.js';
+
+const logger = createLogger('weather');
 
 // Districts with approximate center coordinates
 const DISTRICTS = [
@@ -18,7 +21,7 @@ const DISTRICTS = [
 const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
 
 export async function refreshWeather() {
-  console.log('[weather] Starting weather refresh for', DISTRICTS.length, 'districts');
+  logger.info('Starting weather refresh', { districts: DISTRICTS.length });
 
   // Prune snapshots older than 48 hours to keep the table bounded.
   try {
@@ -26,7 +29,9 @@ export async function refreshWeather() {
       sql`DELETE FROM weather_snapshots WHERE fetched_at < NOW() - INTERVAL '48 hours'`,
     );
   } catch (err) {
-    console.warn('[weather] Cleanup failed (non-fatal):', err);
+    logger.warn('Snapshot cleanup failed (non-fatal)', {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   await Promise.all(
@@ -61,12 +66,14 @@ export async function refreshWeather() {
              NOW())
         `);
 
-        console.log(`[weather] ✓ ${district.name}: ${current.temperature_2m}°C`);
+        logger.info(`${district.name} updated`, { tempC: current.temperature_2m });
       } catch (err) {
-        console.error(`[weather] ✗ ${district.name}:`, err);
+        logger.error(`${district.name} fetch failed`, {
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }),
   );
 
-  console.log('[weather] Refresh complete');
+  logger.info('Weather refresh complete');
 }

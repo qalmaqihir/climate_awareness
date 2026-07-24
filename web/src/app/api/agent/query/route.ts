@@ -5,6 +5,9 @@ import { checkRateLimit } from '@/lib/agent/rate-limit';
 import { db } from '@/lib/db';
 import { sql } from 'drizzle-orm';
 import type { Citation } from '@/lib/agent/types';
+import { createLogger } from '@/lib/logger';
+
+const logger = createLogger('agent');
 
 // Build the graph once at module init (not per-request)
 const graph = buildRAGGraph();
@@ -124,6 +127,7 @@ export async function POST(req: NextRequest) {
         send({ type: 'done', model: modelUsed, remaining: rate.remaining });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Generation failed';
+        logger.error('RAG generation failed', { error: message });
         send({ type: 'error', message });
       } finally {
         controller.close();

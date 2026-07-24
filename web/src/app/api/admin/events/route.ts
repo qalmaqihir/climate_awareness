@@ -1,11 +1,12 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod/v4';
-import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { events, sources } from '@/lib/schema';
 import { COVERAGE_ENVELOPE } from '@/lib/constants';
 import { desc, eq } from 'drizzle-orm';
 import { sanitizeEmbed } from '@/lib/sanitize';
+import { withApiHandler } from '@/lib/api-error';
+import { requireAdmin } from '@/lib/auth-guard';
 
 const createSchema = z
   .object({
@@ -59,16 +60,8 @@ const createSchema = z
     { message: 'exact precision requires latitude and longitude' },
   );
 
-async function requireAdmin() {
-  const session = await auth();
-  if (!session?.user?.isAdmin) return null;
-  return session;
-}
-
-export async function GET() {
-  if (!(await requireAdmin())) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+export const GET = withApiHandler(async () => {
+  await requireAdmin();
 
   const rows = await db
     .select({
@@ -92,12 +85,10 @@ export async function GET() {
     .limit(500);
 
   return NextResponse.json(rows);
-}
+});
 
-export async function POST(req: NextRequest) {
-  if (!(await requireAdmin())) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+export const POST = withApiHandler(async (req: NextRequest) => {
+  await requireAdmin();
 
   const body = await req.json().catch(() => null);
   const parsed = createSchema.safeParse(body);
@@ -146,4 +137,4 @@ export async function POST(req: NextRequest) {
     .returning({ id: events.id });
 
   return NextResponse.json({ id: created.id }, { status: 201 });
-}
+});

@@ -12,6 +12,9 @@
  */
 import { sql } from 'drizzle-orm';
 import { db } from '../db.js';
+import { createLogger } from '../logger.js';
+
+const logger = createLogger('push');
 
 export interface AlertForPush {
   id: number;
@@ -44,8 +47,8 @@ const SUBSCRIBER_FETCH_LIMIT = 1_000;
 
 async function findSubscribers(district: string | null): Promise<SubscriberRow[]> {
   // When district is null, notify all active subscribers (GB-wide alert)
-  const result = district
-    ? await db.execute(sql`
+  const query = district
+    ? db.execute(sql`
         SELECT phone, telegram_chat_id, language
         FROM   subscribers
         WHERE  active = true
@@ -55,12 +58,21 @@ async function findSubscribers(district: string | null): Promise<SubscriberRow[]
           )
         LIMIT ${SUBSCRIBER_FETCH_LIMIT}
       `)
-    : await db.execute(sql`
+    : db.execute(sql`
         SELECT phone, telegram_chat_id, language
         FROM   subscribers
         WHERE  active = true
         LIMIT ${SUBSCRIBER_FETCH_LIMIT}
       `);
+
+  const result = await query.catch((err: unknown) => {
+    logger.error('Failed to fetch subscribers', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  });
+
+  if (!result) return [];
 
   return result.rows.map((r) => ({
     phone: (r.phone as string | null) ?? null,
@@ -144,10 +156,10 @@ async function dispatchTelegram(
       await sendTelegramMessage(sub.telegramChatId, message, botToken);
       sent++;
     } catch (err) {
-      console.error(
-        `[push] Telegram send failed for chat ${sub.telegramChatId}:`,
-        err instanceof Error ? err.message : err,
-      );
+      logger.error('Telegram send failed', {
+        chatId: sub.telegramChatId,
+        error: err instanceof Error ? err.message : String(err),
+      });
       failed++;
     }
 
@@ -212,10 +224,10 @@ async function dispatchSms(
       await sendSms(sub.phone, message, accountSid, authToken, fromNumber);
       sent++;
     } catch (err) {
-      console.error(
-        `[push] SMS failed for ${sub.phone.slice(0, 6)}***:`,
-        err instanceof Error ? err.message : err,
-      );
+      logger.error('SMS send failed', {
+        phone: sub.phone.slice(0, 6) + '***',
+        error: err instanceof Error ? err.message : String(err),
+      });
       failed++;
     }
 
@@ -238,22 +250,22 @@ export async function pushNotify(alert: AlertForPush): Promise<void> {
   const hasTwilio = Boolean(twAccountSid && twAuthToken && twFromNumber);
 
   if (!hasTelegram && !hasTwilio) {
-    console.log(
-      '[push] No notification channels configured (TELEGRAM_BOT_TOKEN / TWILIO_* not set)',
-    );
+    logger.info('No notification channels configured (TELEGRAM_BOT_TOKEN / TWILIO_* not set)');
     return;
   }
 
   const subscribers = await findSubscribers(alert.district);
 
   if (subscribers.length === 0) {
-    console.log(`[push] Alert ${alert.id}: no subscribers to notify`);
+    logger.info('No subscribers to notify', { alertId: alert.id });
     return;
   }
 
-  console.log(
-    `[push] Alert ${alert.id} "${alert.title.slice(0, 60)}": notifying ${subscribers.length} subscriber(s)`,
-  );
+  logger.info('Notifying subscribers', {
+    alertId: alert.id,
+    title: alert.title.slice(0, 60),
+    count: subscribers.length,
+  });
 
   // Filter at dispatch time: avoid passing irrelevant rows to each channel
   const telegramSubs = hasTelegram ? subscribers.filter((s) => s.telegramChatId !== null) : [];
@@ -273,9 +285,9 @@ export async function pushNotify(alert: AlertForPush): Promise<void> {
     r.status === 'fulfilled' ? r.value : { sent: 0, failed: 1 },
   );
 
-  console.log(
-    `[push] Alert ${alert.id} complete — ` +
-      `Telegram: ${tgResult.sent} sent, ${tgResult.failed} failed | ` +
-      `SMS: ${smsResult.sent} sent, ${smsResult.failed} failed`,
-  );
+  logger.info('Push dispatch complete', {
+    alertId: alert.id,
+    telegram: tgResult,
+    sms: smsResult,
+  });
 }

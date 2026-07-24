@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { leads, leadEvidence } from '@/lib/schema';
 import { submitSchema } from '@/lib/leads-submission-schema';
+import { withApiHandler, AppError } from '@/lib/api-error';
 
 export { submitSchema, EVENT_TYPES } from '@/lib/leads-submission-schema';
 
@@ -11,15 +12,13 @@ const RATE_LIMIT_PER_HOUR = 5;
 
 // ─── POST /api/leads — authenticated contributor submission ───────────────────
 
-export async function POST(req: Request) {
+export const POST = withApiHandler(async (req: Request) => {
   const session = await auth();
-  if (!session?.user?.email) {
-    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
-  }
+  if (!session?.user?.email) throw new AppError(401, 'Authentication required');
 
   // Only contributors may submit leads — admins have a separate event creation flow
   if (session.user.role !== 'contributor') {
-    return NextResponse.json({ error: 'Only contributors can submit reports' }, { status: 403 });
+    throw new AppError(403, 'Only contributors can submit reports');
   }
 
   const email = session.user.email;
@@ -32,17 +31,14 @@ export async function POST(req: Request) {
     .where(and(eq(leads.submitterEmail, email), gt(leads.createdAt, oneHourAgo)));
 
   if (recentCount >= RATE_LIMIT_PER_HOUR) {
-    return NextResponse.json(
-      { error: `Rate limit reached — max ${RATE_LIMIT_PER_HOUR} reports per hour` },
-      { status: 429 },
-    );
+    throw new AppError(429, `Rate limit reached — max ${RATE_LIMIT_PER_HOUR} reports per hour`);
   }
 
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+    throw new AppError(400, 'Invalid request body');
   }
 
   const parsed = submitSchema.safeParse(body);
@@ -96,4 +92,4 @@ export async function POST(req: Request) {
     { id: newLead.id, message: 'Report received — a moderator will review it shortly.' },
     { status: 201 },
   );
-}
+});

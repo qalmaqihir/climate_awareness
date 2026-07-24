@@ -16,6 +16,9 @@ import { z } from 'zod/v4';
 import { sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { GB_DISTRICTS } from '@/lib/constants';
+import { createLogger } from '@/lib/logger';
+
+const logger = createLogger('subscribe');
 
 const TWILIO_API = 'https://api.twilio.com/2010-04-01/Accounts';
 const OTP_TTL_MINUTES = 10;
@@ -87,7 +90,10 @@ async function sendOtpSms(phone: string, code: string): Promise<void> {
   const fromNumber = process.env.TWILIO_FROM_NUMBER;
 
   if (!accountSid || !authToken || !fromNumber) {
-    console.log(`[subscribe] Twilio not configured — OTP for ${phone.slice(0, 6)}***: ${code}`);
+    logger.info('Twilio not configured — OTP logged for dev', {
+      phone: phone.slice(0, 6) + '***',
+      devCode: code,
+    });
     return;
   }
 
@@ -183,7 +189,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   } catch (err) {
     // Clean up the OTP row so the client can retry cleanly
     await db.execute(sql`DELETE FROM sms_otps WHERE phone = ${phone}`).catch(() => {});
-    console.error('[subscribe] SMS send failed:', err instanceof Error ? err.message : err);
+    logger.error('SMS send failed', { error: err instanceof Error ? err.message : String(err) });
     return NextResponse.json(
       { error: 'Failed to send SMS. Check your phone number and try again.' },
       { status: 502 },

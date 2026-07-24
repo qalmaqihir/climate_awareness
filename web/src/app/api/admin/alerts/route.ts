@@ -10,21 +10,14 @@
  *   limit=N          — default 50, max 200
  */
 import { type NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { alerts } from '@/lib/schema';
 import { and, desc, eq, gte, lte } from 'drizzle-orm';
+import { withApiHandler } from '@/lib/api-error';
+import { requireAdmin } from '@/lib/auth-guard';
 
-async function requireAdmin() {
-  const session = await auth();
-  if (!session?.user?.isAdmin) return null;
-  return session;
-}
-
-export async function GET(req: NextRequest): Promise<NextResponse> {
-  if (!(await requireAdmin())) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+export const GET = withApiHandler(async (req: NextRequest) => {
+  await requireAdmin();
 
   const { searchParams } = new URL(req.url);
   const limit = Math.min(200, Math.max(1, parseInt(searchParams.get('limit') ?? '50', 10)));
@@ -70,4 +63,4 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     .limit(limit);
 
   return NextResponse.json({ alerts: rows, count: rows.length });
-}
+});

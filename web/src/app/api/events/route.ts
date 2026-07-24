@@ -1,6 +1,9 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { CANONICAL_EVENT_TYPES, GB_DISTRICTS, isWithinCoverage } from '@/lib/constants';
 import { getEvents } from '@/lib/queries';
+import { createLogger } from '@/lib/logger';
+
+const logger = createLogger('events');
 
 export const dynamic = 'force-dynamic';
 
@@ -62,7 +65,10 @@ export async function GET(req: NextRequest) {
       },
       MAX_RESULTS,
     );
-  } catch {
+  } catch (err) {
+    logger.error('Failed to fetch events', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return NextResponse.json(
       { error: 'Service temporarily unavailable' },
       { status: 503, headers: { 'Access-Control-Allow-Origin': '*' } },

@@ -17,6 +17,9 @@
 import * as cheerio from 'cheerio';
 import { sql } from 'drizzle-orm';
 import { db } from '../db.js';
+import { createLogger } from '../logger.js';
+
+const logger = createLogger('alerts');
 
 const RELIEFWEB_URL = 'https://api.reliefweb.int/v2/reports';
 const PAMIR_TIMES_RSS = 'https://pamirtimes.net/feed/';
@@ -86,8 +89,15 @@ function inferAlertType(text: string): string {
 }
 
 async function getSourceId(slug: string): Promise<number | null> {
-  const res = await db.execute(sql`SELECT id FROM sources WHERE slug = ${slug} LIMIT 1`);
-  return (res.rows[0]?.id as number) ?? null;
+  try {
+    const res = await db.execute(sql`SELECT id FROM sources WHERE slug = ${slug} LIMIT 1`);
+    return (res.rows[0]?.id as number) ?? null;
+  } catch (err) {
+    logger.warn(`Could not resolve source id for slug '${slug}'`, {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
 }
 
 interface AlertCandidate {
@@ -140,7 +150,7 @@ async function batchInsertAlerts(
 // ─── ReliefWeb API ────────────────────────────────────────────────────────────
 
 async function scrapeReliefWeb(sourceId: number | null) {
-  console.log('[alerts] Fetching ReliefWeb Pakistan disaster reports');
+  logger.info('Fetching ReliefWeb Pakistan disaster reports');
 
   const body = JSON.stringify({
     filter: {
@@ -170,11 +180,11 @@ async function scrapeReliefWeb(sourceId: number | null) {
 
   if (!res.ok) {
     if (res.status === 403) {
-      console.warn(
-        '[alerts] ReliefWeb v2: access denied — appname not approved. Register at https://apidoc.reliefweb.int/parameters#appname',
+      logger.warn(
+        'ReliefWeb v2: access denied — appname not approved. Register at https://apidoc.reliefweb.int/parameters#appname',
       );
     } else {
-      console.error(`[alerts] ReliefWeb HTTP ${res.status}`);
+      logger.error('ReliefWeb fetch failed', { status: res.status });
     }
     return;
   }
@@ -207,14 +217,14 @@ async function scrapeReliefWeb(sourceId: number | null) {
   }
 
   const inserted = await batchInsertAlerts(candidates, sourceId);
-  console.log(`[alerts] ReliefWeb: ${inserted} new GB-relevant reports inserted`);
+  logger.info('ReliefWeb scrape complete', { inserted, scanned: items.length });
 }
 
 // ─── Pamir Times RSS ──────────────────────────────────────────────────────────
 // Leading English-language newspaper for Gilgit-Baltistan. Standard WordPress RSS.
 
 async function scrapePamirTimes(sourceId: number | null) {
-  console.log('[alerts] Fetching Pamir Times RSS');
+  logger.info('Fetching Pamir Times RSS');
 
   const res = await fetch(PAMIR_TIMES_RSS, {
     headers: { 'User-Agent': UA },
@@ -222,7 +232,7 @@ async function scrapePamirTimes(sourceId: number | null) {
   });
 
   if (!res.ok) {
-    console.error(`[alerts] Pamir Times RSS HTTP ${res.status}`);
+    logger.error('Pamir Times RSS fetch failed', { status: res.status });
     return;
   }
 
@@ -286,9 +296,7 @@ async function scrapePamirTimes(sourceId: number | null) {
   }
 
   const inserted = await batchInsertAlerts(candidates, sourceId);
-  console.log(
-    `[alerts] Pamir Times: ${inserted} new disaster alerts inserted (${items.length} items scanned)`,
-  );
+  logger.info('Pamir Times scrape complete', { inserted, scanned: items.length });
 }
 
 // ─── GDACS RSS ────────────────────────────────────────────────────────────────
@@ -296,7 +304,7 @@ async function scrapePamirTimes(sourceId: number | null) {
 // Covers Pakistan-level floods and landslides; filtered further for GB keywords.
 
 async function scrapeGDACS(sourceId: number | null) {
-  console.log('[alerts] Fetching GDACS RSS');
+  logger.info('Fetching GDACS RSS');
 
   const res = await fetch(GDACS_RSS, {
     headers: { 'User-Agent': UA },
@@ -304,7 +312,7 @@ async function scrapeGDACS(sourceId: number | null) {
   });
 
   if (!res.ok) {
-    console.error(`[alerts] GDACS RSS HTTP ${res.status}`);
+    logger.error('GDACS RSS fetch failed', { status: res.status });
     return;
   }
 
@@ -350,9 +358,7 @@ async function scrapeGDACS(sourceId: number | null) {
   }
 
   const inserted = await batchInsertAlerts(candidates, sourceId);
-  console.log(
-    `[alerts] GDACS: ${inserted} Pakistan/GB alerts inserted (${items.length} items scanned)`,
-  );
+  logger.info('GDACS scrape complete', { inserted, scanned: items.length });
 }
 
 // ─── Chitral Times RSS ────────────────────────────────────────────────────────
@@ -362,7 +368,7 @@ async function scrapeGDACS(sourceId: number | null) {
 // so GB-relevance is assumed; the AI verifier suppresses non-disaster items.
 
 async function scrapeChitralTimes(sourceId: number | null) {
-  console.log('[alerts] Fetching Chitral Times RSS');
+  logger.info('Fetching Chitral Times RSS');
 
   // Chitral Times sits behind Cloudflare — needs a browser-like UA
   const res = await fetch(CHITRAL_TIMES_RSS, {
@@ -375,7 +381,7 @@ async function scrapeChitralTimes(sourceId: number | null) {
   });
 
   if (!res.ok) {
-    console.error(`[alerts] Chitral Times RSS HTTP ${res.status}`);
+    logger.error('Chitral Times RSS fetch failed', { status: res.status });
     return;
   }
 
@@ -450,15 +456,13 @@ async function scrapeChitralTimes(sourceId: number | null) {
   }
 
   const inserted = await batchInsertAlerts(candidates, sourceId);
-  console.log(
-    `[alerts] Chitral Times: ${inserted} new disaster alerts inserted (${items.length} items scanned)`,
-  );
+  logger.info('Chitral Times scrape complete', { inserted, scanned: items.length });
 }
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
 export async function checkAlerts() {
-  console.log('[alerts] Starting alert check');
+  logger.info('Starting alert check');
 
   const [reliefwebSourceId, pamirTimesSourceId, gdacsSourceId, chitralTimesSourceId] =
     await Promise.all([
@@ -469,17 +473,25 @@ export async function checkAlerts() {
     ]);
 
   await Promise.all([
-    scrapeReliefWeb(reliefwebSourceId).catch((e) =>
-      console.error('[alerts] ReliefWeb scraper error:', e),
+    scrapeReliefWeb(reliefwebSourceId).catch((e: unknown) =>
+      logger.error('ReliefWeb scraper error', {
+        error: e instanceof Error ? e.message : String(e),
+      }),
     ),
-    scrapePamirTimes(pamirTimesSourceId).catch((e) =>
-      console.error('[alerts] Pamir Times scraper error:', e),
+    scrapePamirTimes(pamirTimesSourceId).catch((e: unknown) =>
+      logger.error('Pamir Times scraper error', {
+        error: e instanceof Error ? e.message : String(e),
+      }),
     ),
-    scrapeGDACS(gdacsSourceId).catch((e) => console.error('[alerts] GDACS scraper error:', e)),
-    scrapeChitralTimes(chitralTimesSourceId).catch((e) =>
-      console.error('[alerts] Chitral Times scraper error:', e),
+    scrapeGDACS(gdacsSourceId).catch((e: unknown) =>
+      logger.error('GDACS scraper error', { error: e instanceof Error ? e.message : String(e) }),
+    ),
+    scrapeChitralTimes(chitralTimesSourceId).catch((e: unknown) =>
+      logger.error('Chitral Times scraper error', {
+        error: e instanceof Error ? e.message : String(e),
+      }),
     ),
   ]);
 
-  console.log('[alerts] Alert check complete');
+  logger.info('Alert check complete');
 }

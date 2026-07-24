@@ -23,6 +23,9 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { GB_DISTRICTS } from '@/lib/constants';
+import { createLogger } from '@/lib/logger';
+
+const logger = createLogger('tg');
 
 const TELEGRAM_API = 'https://api.telegram.org/bot';
 const SITE_URL = process.env.NEXTAUTH_URL ?? 'https://climate-awareness-gbc.qalmaq.cloud';
@@ -74,7 +77,7 @@ async function sendMessage(
     }),
     signal: AbortSignal.timeout(10_000),
   }).catch((err) =>
-    console.error('[tg] sendMessage failed:', err instanceof Error ? err.message : err),
+    logger.error('sendMessage failed', { error: err instanceof Error ? err.message : String(err) }),
   );
 }
 
@@ -294,7 +297,7 @@ async function handleAsk(chatId: number, question: string): Promise<void> {
 
     await sendMessage(chatId, response);
   } catch (err) {
-    console.error('[tg] /ask error:', err instanceof Error ? err.message : err);
+    logger.error('/ask error', { error: err instanceof Error ? err.message : String(err) });
     await sendMessage(chatId, 'Request timed out. The AI agent may be busy — try again.');
   }
 }
@@ -330,7 +333,7 @@ async function handleSubscribe(chatId: number, args: string[]): Promise<void> {
       `✅ Subscribed to push alerts for <b>${districtList}</b>.${districtHelp}\n\nUse /unsubscribe to stop.`,
     );
   } catch (err) {
-    console.error('[tg] /subscribe error:', err instanceof Error ? err.message : err);
+    logger.error('/subscribe error', { error: err instanceof Error ? err.message : String(err) });
     await sendMessage(chatId, 'Could not save subscription. Please try again.');
   }
 }
@@ -348,7 +351,7 @@ async function handleUnsubscribe(chatId: number): Promise<void> {
       '👋 You have been unsubscribed from push alerts.\n\nUse /subscribe to re-enable.',
     );
   } catch (err) {
-    console.error('[tg] /unsubscribe error:', err instanceof Error ? err.message : err);
+    logger.error('/unsubscribe error', { error: err instanceof Error ? err.message : String(err) });
     await sendMessage(chatId, 'Could not update subscription. Please try again.');
   }
 }
@@ -391,7 +394,7 @@ async function processUpdate(update: TelegramUpdate): Promise<void> {
   const [rawCmd, ...args] = text.split(/\s+/);
   const cmd = rawCmd.replace(/@\w+$/, '').toLowerCase();
 
-  console.log(`[tg] chat=${chatId} cmd=${cmd} args=${args.join(',')}`);
+  logger.info('Command received', { chatId, cmd, args });
 
   switch (cmd) {
     case '/start':
@@ -440,13 +443,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // TELEGRAM_SECRET_TOKEN is mandatory. Without it every POST would be accepted from any source.
   const secretToken = process.env.TELEGRAM_SECRET_TOKEN;
   if (!secretToken) {
-    console.error('[tg] TELEGRAM_SECRET_TOKEN not set — rejecting all webhook requests');
+    logger.error('TELEGRAM_SECRET_TOKEN not set — rejecting all webhook requests');
     return NextResponse.json({ error: 'Webhook not configured' }, { status: 503 });
   }
 
   const provided = req.headers.get('x-telegram-bot-api-secret-token');
   if (provided !== secretToken) {
-    console.warn('[tg] Webhook request rejected — invalid secret token');
+    logger.warn('Webhook request rejected — invalid secret token');
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -461,7 +464,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // Command processing happens in a fire-and-forget promise — safe because
   // we run on a persistent Node.js process (VPS), not a serverless function.
   processUpdate(update).catch((err) =>
-    console.error('[tg] Unhandled error in processUpdate:', err),
+    logger.error('Unhandled error in processUpdate', {
+      error: err instanceof Error ? err.message : String(err),
+    }),
   );
 
   return NextResponse.json({ ok: true });

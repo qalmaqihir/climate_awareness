@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod/v4';
 import { and, eq, or } from 'drizzle-orm';
-import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { events, incidentRelations } from '@/lib/schema';
 import { getEventRelations } from '@/lib/queries';
+import { withApiHandler, AppError } from '@/lib/api-error';
+import { requireAdmin } from '@/lib/auth-guard';
 
 const postSchema = z.object({
   targetEventId: z.number().int(),
@@ -18,38 +19,31 @@ const deleteSchema = z.object({
 
 type Props = { params: Promise<{ id: string }> };
 
-async function requireAdmin() {
-  const session = await auth();
-  return session?.user?.isAdmin ? session : null;
-}
-
-export async function GET(_req: Request, { params }: Props) {
-  if (!(await requireAdmin())) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-
+export const GET = withApiHandler(async (_req: Request, { params }: Props) => {
+  await requireAdmin();
   const { id } = await params;
   const eventId = parseInt(id);
-  if (isNaN(eventId)) return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
+  if (isNaN(eventId)) throw new AppError(400, 'Invalid id');
 
   const relations = await getEventRelations(eventId);
   return NextResponse.json({ relations });
-}
+});
 
-export async function POST(req: Request, { params }: Props) {
-  if (!(await requireAdmin())) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-
+export const POST = withApiHandler(async (req: Request, { params }: Props) => {
+  await requireAdmin();
   const { id } = await params;
   const eventId = parseInt(id);
-  if (isNaN(eventId)) return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
+  if (isNaN(eventId)) throw new AppError(400, 'Invalid id');
 
   const body = await req.json().catch(() => null);
   const parsed = postSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
 
   const { targetEventId, relationType, note } = parsed.data;
 
-  if (targetEventId === eventId) {
-    return NextResponse.json({ error: 'Cannot relate an event to itself' }, { status: 422 });
-  }
+  if (targetEventId === eventId) throw new AppError(422, 'Cannot relate an event to itself');
 
   // Verify both events exist
   const [target] = await db
@@ -57,7 +51,7 @@ export async function POST(req: Request, { params }: Props) {
     .from(events)
     .where(eq(events.id, targetEventId))
     .limit(1);
-  if (!target) return NextResponse.json({ error: 'Target event not found' }, { status: 404 });
+  if (!target) throw new AppError(404, 'Target event not found');
 
   // Enforce canonical ordering (CHECK constraint requires source < target)
   const sourceId = Math.min(eventId, targetEventId);
@@ -69,23 +63,19 @@ export async function POST(req: Request, { params }: Props) {
     .onConflictDoNothing()
     .returning();
 
-  if (!created) {
-    return NextResponse.json({ error: 'Relation already exists' }, { status: 409 });
-  }
-
+  if (!created) throw new AppError(409, 'Relation already exists');
   return NextResponse.json(created, { status: 201 });
-}
+});
 
-export async function DELETE(req: Request, { params }: Props) {
-  if (!(await requireAdmin())) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-
+export const DELETE = withApiHandler(async (req: Request, { params }: Props) => {
+  await requireAdmin();
   const { id } = await params;
   const eventId = parseInt(id);
-  if (isNaN(eventId)) return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
+  if (isNaN(eventId)) throw new AppError(400, 'Invalid id');
 
   const body = await req.json().catch(() => null);
   const parsed = deleteSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
+  if (!parsed.success) throw new AppError(400, 'Invalid body');
 
   // Only delete if the relation actually involves this event (prevents cross-event deletes)
   const deleted = await db
@@ -101,9 +91,6 @@ export async function DELETE(req: Request, { params }: Props) {
     )
     .returning({ id: incidentRelations.id });
 
-  if (deleted.length === 0) {
-    return NextResponse.json({ error: 'Relation not found' }, { status: 404 });
-  }
-
+  if (deleted.length === 0) throw new AppError(404, 'Relation not found');
   return NextResponse.json({ deleted: deleted[0].id });
-}
+});

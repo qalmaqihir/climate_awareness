@@ -1,12 +1,13 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod/v4';
 import { eq } from 'drizzle-orm';
-import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { events } from '@/lib/schema';
 import { COVERAGE_ENVELOPE } from '@/lib/constants';
 import { sanitizeEmbed } from '@/lib/sanitize';
 import { getEventById } from '@/lib/queries';
+import { withApiHandler, AppError } from '@/lib/api-error';
+import { requireAdmin } from '@/lib/auth-guard';
 
 const patchSchema = z
   .object({
@@ -60,106 +61,84 @@ const patchSchema = z
     { message: 'exact precision requires latitude and longitude' },
   );
 
-async function requireAdmin() {
-  const session = await auth();
-  if (!session?.user?.isAdmin) return null;
-  return session;
+function parseEventId(id: string): number {
+  const n = parseInt(id);
+  if (isNaN(n)) throw new AppError(400, 'Invalid id');
+  return n;
 }
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!(await requireAdmin())) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+export const GET = withApiHandler(
+  async (_req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+    await requireAdmin();
+    const { id } = await params;
+    const eventId = parseEventId(id);
+    const event = await getEventById(eventId);
+    if (!event) throw new AppError(404, 'Not found');
+    return NextResponse.json(event);
+  },
+);
 
-  const { id } = await params;
-  const eventId = parseInt(id);
-  if (isNaN(eventId)) {
-    return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
-  }
+export const PATCH = withApiHandler(
+  async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+    await requireAdmin();
+    const { id } = await params;
+    const eventId = parseEventId(id);
 
-  const event = await getEventById(eventId);
-  if (!event) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  }
+    const body = await req.json().catch(() => null);
+    const parsed = patchSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+    }
 
-  return NextResponse.json(event);
-}
+    const d = parsed.data;
+    const locationWkt =
+      d.latitude != null && d.longitude != null ? `POINT(${d.longitude} ${d.latitude})` : undefined;
 
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!(await requireAdmin())) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+    const updated = await db
+      .update(events)
+      .set({
+        ...(d.title !== undefined && { title: d.title }),
+        ...(d.description !== undefined && { description: d.description }),
+        ...(d.eventType !== undefined && { eventType: d.eventType }),
+        ...(d.eventSubtype !== undefined && { eventSubtype: d.eventSubtype }),
+        ...(d.severity !== undefined && { severity: d.severity }),
+        ...(d.status !== undefined && { status: d.status }),
+        ...(d.state !== undefined && { state: d.state }),
+        ...(d.district !== undefined && { district: d.district }),
+        ...(d.locationName !== undefined && { locationName: d.locationName }),
+        ...(d.locationPrecision !== undefined && { locationPrecision: d.locationPrecision }),
+        ...(d.locationRationale !== undefined && { locationRationale: d.locationRationale }),
+        ...(locationWkt !== undefined && { location: locationWkt as unknown as string }),
+        ...(d.sourceUrl !== undefined && { sourceUrl: d.sourceUrl }),
+        ...(d.embedHtml !== undefined && {
+          embedHtml: d.embedHtml != null ? sanitizeEmbed(d.embedHtml) : null,
+        }),
+        ...(d.affectedCount !== undefined && { affectedCount: d.affectedCount }),
+        ...(d.reportedAt !== undefined && { reportedAt: new Date(d.reportedAt) }),
+        updatedAt: new Date(),
+      })
+      .where(eq(events.id, eventId))
+      .returning({ id: events.id });
 
-  const { id } = await params;
-  const eventId = parseInt(id);
-  if (isNaN(eventId)) {
-    return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
-  }
-
-  const body = await req.json().catch(() => null);
-  const parsed = patchSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
-
-  const d = parsed.data;
-  const locationWkt =
-    d.latitude != null && d.longitude != null ? `POINT(${d.longitude} ${d.latitude})` : undefined;
-
-  const updated = await db
-    .update(events)
-    .set({
-      ...(d.title !== undefined && { title: d.title }),
-      ...(d.description !== undefined && { description: d.description }),
-      ...(d.eventType !== undefined && { eventType: d.eventType }),
-      ...(d.eventSubtype !== undefined && { eventSubtype: d.eventSubtype }),
-      ...(d.severity !== undefined && { severity: d.severity }),
-      ...(d.status !== undefined && { status: d.status }),
-      ...(d.state !== undefined && { state: d.state }),
-      ...(d.district !== undefined && { district: d.district }),
-      ...(d.locationName !== undefined && { locationName: d.locationName }),
-      ...(d.locationPrecision !== undefined && { locationPrecision: d.locationPrecision }),
-      ...(d.locationRationale !== undefined && { locationRationale: d.locationRationale }),
-      ...(locationWkt !== undefined && { location: locationWkt as unknown as string }),
-      ...(d.sourceUrl !== undefined && { sourceUrl: d.sourceUrl }),
-      ...(d.embedHtml !== undefined && {
-        embedHtml: d.embedHtml != null ? sanitizeEmbed(d.embedHtml) : null,
-      }),
-      ...(d.affectedCount !== undefined && { affectedCount: d.affectedCount }),
-      ...(d.reportedAt !== undefined && { reportedAt: new Date(d.reportedAt) }),
-      updatedAt: new Date(),
-    })
-    .where(eq(events.id, eventId))
-    .returning({ id: events.id });
-
-  if (updated.length === 0) {
-    return NextResponse.json({ error: 'Event not found' }, { status: 404 });
-  }
-
-  return NextResponse.json({ ok: true });
-}
+    if (updated.length === 0) throw new AppError(404, 'Event not found');
+    return NextResponse.json({ ok: true });
+  },
+);
 
 // Soft-delete: set status to archived (archived ≠ resolved; this is editorial removal)
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!(await requireAdmin())) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+export const DELETE = withApiHandler(
+  async (_req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+    await requireAdmin();
+    const { id } = await params;
+    const eventId = parseEventId(id);
 
-  const { id } = await params;
-  const eventId = parseInt(id);
-  if (isNaN(eventId)) {
-    return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
-  }
+    const deleted = await db
+      .update(events)
+      .set({ status: 'archived', updatedAt: new Date() })
+      .where(eq(events.id, eventId))
+      .returning({ id: events.id });
 
-  const deleted = await db
-    .update(events)
-    .set({ status: 'archived', updatedAt: new Date() })
-    .where(eq(events.id, eventId))
-    .returning({ id: events.id });
-
-  if (deleted.length === 0) {
-    return NextResponse.json({ error: 'Event not found' }, { status: 404 });
-  }
-
-  return NextResponse.json({ ok: true });
-}
+    if (deleted.length === 0) throw new AppError(404, 'Event not found');
+    return NextResponse.json({ ok: true });
+  },
+);

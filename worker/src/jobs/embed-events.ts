@@ -7,6 +7,9 @@
  */
 import { db } from '../db.js';
 import { sql } from 'drizzle-orm';
+import { createLogger } from '../logger.js';
+
+const logger = createLogger('embed');
 
 const JINA_API = 'https://api.jina.ai/v1/embeddings';
 const JINA_MODEL = 'jina-embeddings-v3';
@@ -58,7 +61,7 @@ function buildEmbeddingText(row: Record<string, unknown>): string {
 
 export async function embedUnindexedEvents() {
   if (!process.env.JINA_API_KEY) {
-    console.log('[embed] JINA_API_KEY not set — skipping embedding job');
+    logger.info('JINA_API_KEY not set — skipping embedding job');
     return;
   }
 
@@ -74,16 +77,17 @@ export async function embedUnindexedEvents() {
   `);
 
   if (unindexed.rows.length === 0) {
-    console.log('[embed] All verified events are indexed');
+    logger.debug('All verified events are indexed');
     return;
   }
 
-  console.log(`[embed] Indexing ${unindexed.rows.length} events`);
+  logger.info('Indexing events', { count: unindexed.rows.length });
   let embedded = 0;
 
   for (let i = 0; i < unindexed.rows.length; i += BATCH_SIZE) {
     const batch = unindexed.rows.slice(i, i + BATCH_SIZE);
     const texts = batch.map(buildEmbeddingText);
+    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
 
     try {
       const embeddings = await fetchEmbeddings(texts);
@@ -101,13 +105,14 @@ export async function embedUnindexedEvents() {
       );
 
       embedded += batch.length;
-      console.log(
-        `[embed] Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} events embedded`,
-      );
+      logger.info('Batch embedded', { batch: batchNum, count: batch.length });
     } catch (err) {
-      console.error(`[embed] Batch ${Math.floor(i / BATCH_SIZE) + 1} failed:`, err);
+      logger.error('Batch failed', {
+        batch: batchNum,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
-  console.log(`[embed] Done — ${embedded} events indexed`);
+  logger.info('Embedding run complete', { embedded });
 }
