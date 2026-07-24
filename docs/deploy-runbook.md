@@ -14,6 +14,7 @@ Docker Compose profiles: `app` (web + worker) · `tools` (migrate / seed / admin
 1. [First-time provisioning](#1-first-time-provisioning)
 2. [First full deploy](#2-first-full-deploy)
 3. [Code deployments (ongoing)](#3-code-deployments-ongoing)
+   3b. [Phase 2 deploy — AI verification + Telegram bot + SMS](#3b--phase-2-deploy--ai-verification--telegram-bot--sms)
 4. [Admin user management](#4-admin-user-management)
 5. [Seed data management](#5-seed-data-management)
 6. [Verification commands](#6-verification-commands)
@@ -203,6 +204,146 @@ docker compose logs worker --tail 30
 
 > **When to run seed steps:** Only run 3 and 4 if the release notes say seed files changed.
 > Always safe to run them (idempotent), so when in doubt — run them.
+
+---
+
+## 3b — Phase 2 deploy — AI verification + Telegram bot + SMS
+
+Run this section once when deploying the Phase 2 feature set (`feat(phase2)` commit and later).
+All steps are idempotent. Skip steps whose env vars are not yet available.
+
+### Step 1: Apply migration 0008 (AI columns + subscribers + sms_otps)
+
+```bash
+cd ~/docker/apps/climate_awareness/climate_awareness
+
+# Rebuild tools image to pick up new migration SQL
+docker compose --profile tools run --rm --build tools pnpm db:migrate
+
+# Verify the new columns and tables exist
+docker compose exec postgres psql -U climate_gb -d climate_gb -c "
+  SELECT column_name FROM information_schema.columns
+  WHERE table_name = 'alerts' AND column_name IN ('ai_confidence','ai_summary','ai_verified');
+"
+# Expected: 3 rows
+
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "SELECT table_name FROM information_schema.tables WHERE table_name IN ('subscribers','sms_otps');"
+# Expected: 2 rows
+```
+
+### Step 2: Re-seed sources (fixes chitral-times URL, marks pdma-kpk inactive)
+
+```bash
+docker compose --profile tools run --rm tools pnpm db:seed
+```
+
+### Step 3: Seed 15 new Chitral events
+
+```bash
+docker compose --profile tools run --rm tools pnpm db:seed-events
+# Expected: 15 new events inserted (Upper + Lower Chitral, 2015–2024)
+```
+
+### Step 4: Add new env vars to .env
+
+```bash
+nano .env
+
+# Add these lines (fill in real values):
+# --- AI verification ---
+# OPENROUTER_API_KEY already set from Phase 1 — also used for verify-alerts
+
+# --- Telegram bot ---
+# Create bot via BotFather: https://t.me/BotFather → /newbot
+# Copy the token (e.g. 7123456789:AAF...) and set a random 32-char secret
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_SECRET_TOKEN=$(openssl rand -base64 24 | tr -d '/+=')
+
+# --- Twilio SMS (optional — SMS opt-in disabled if not set) ---
+# Sign up at https://www.twilio.com → get Account SID, Auth Token, and a phone number
+TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_AUTH_TOKEN=
+TWILIO_FROM_NUMBER=+1xxxxxxxxxx
+```
+
+Restart to apply:
+
+```bash
+docker compose --profile app up -d web worker
+```
+
+### Step 5: Register Telegram webhook
+
+Do this once after `TELEGRAM_BOT_TOKEN` is set. Replace `<TOKEN>` and `<SECRET>`:
+
+```bash
+BOT_TOKEN=$(grep TELEGRAM_BOT_TOKEN .env | cut -d= -f2)
+SECRET=$(grep TELEGRAM_SECRET_TOKEN .env | cut -d= -f2)
+SITE_URL=https://climate-awareness-gbc.qalmaq.cloud
+
+curl -s "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook" \
+  -d "url=${SITE_URL}/api/telegram/webhook" \
+  -d "secret_token=${SECRET}" \
+  -d "allowed_updates=[\"message\"]"
+# Expected: {"ok":true,"result":true,...}
+```
+
+Verify the webhook is live:
+
+```bash
+curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo" | python3 -m json.tool
+# Expected: "url": "https://climate-awareness-gbc.qalmaq.cloud/api/telegram/webhook"
+#           "pending_update_count": 0
+```
+
+### Step 6: Verify AI verification pipeline
+
+```bash
+# Check worker logs for verify-alerts job
+docker compose logs worker | grep "\[verify\]"
+# Expected within ~5 min of deploy:
+#   [verify] Processing N unverified alert(s)
+#   [verify] Alert X verified (confidence=NN, isDisaster=true/false)
+#   [verify] Done — verified=N, suppressed=M, pushed=P, failed=F
+
+# Check alerts with AI scores in DB
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "SELECT id, title, ai_confidence, ai_verified, is_active FROM alerts ORDER BY issued_at DESC LIMIT 10;"
+
+# Check admin UI: https://climate-awareness-gbc.qalmaq.cloud/admin/alerts
+# Should show confidence badges (green ≥80, amber 50-79, red <50)
+```
+
+### Step 7: Test Telegram bot
+
+Send messages to your bot:
+
+```
+/start      → welcome message with all commands
+/latest     → last 5 verified events
+/alerts     → active alerts for all GB
+/alerts Hunza → active alerts for Hunza
+/weather    → current weather per district
+/ask What GLOF events happened in 2022?  → RAG answer
+```
+
+### Step 8: Test SMS opt-in
+
+Visit `https://climate-awareness-gbc.qalmaq.cloud/subscribe` in a browser:
+
+1. Enter a phone number in E.164 format (e.g. `+923001234567`)
+2. Select one or more districts
+3. Click **Send verification code**
+4. Enter the 6-digit code from SMS
+5. Confirm subscription
+
+Verify in DB:
+
+```bash
+docker compose exec postgres psql -U climate_gb -d climate_gb \
+  -c "SELECT phone, districts, active, opt_in_at FROM subscribers ORDER BY opt_in_at DESC LIMIT 5;"
+```
 
 ---
 
@@ -455,11 +596,55 @@ docker compose logs worker --tail 50
 docker compose --profile app up -d worker
 
 # Worker job schedule (from logs)
-# Startup: migrations check, embed run, weather refresh, alert check
-# Every 15min: embed job
-# Every 30min: weather refresh
-# Every 60min: alert check, PDMA check
-# Daily: cleanup (old query_logs, weather snapshots)
+# Startup: alert check → weather refresh + AI verify + embed (parallel)
+# Every 15min (at :05/:20/:35/:50): AI verify-alerts
+# Every 15min (at :00/:15/:30/:45): embed job
+# Hourly (at :00): alert check (ReliefWeb, Pamir Times, GDACS, Chitral Times)
+# Every 6h: weather refresh
+# Daily 03:00: cleanup (old query_logs, expired sms_otps)
+```
+
+### AI verification not running
+
+```bash
+# Check OPENROUTER_API_KEY is set (used for both RAG and AI verification)
+grep OPENROUTER_API_KEY .env
+
+# Watch verify-alerts logs
+docker compose logs worker | grep "\[verify\]"
+# "[verify] OPENROUTER_API_KEY not set" → add key, restart worker
+# "[verify] No unverified alerts — nothing to do" → all alerts already processed
+# "[verify] N failed" → OpenRouter API error; check API key validity
+
+# Test OpenRouter models directly
+curl -s https://openrouter.ai/api/v1/chat/completions \
+  -H "Authorization: Bearer $(grep OPENROUTER_API_KEY .env | cut -d= -f2)" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"google/gemma-4-26b-a4b-it:free","messages":[{"role":"user","content":"Reply: OK"}],"max_tokens":5}' \
+  | grep -o '"content":"[^"]*"'
+# Expected: "content":"OK"
+
+# Force immediate verify run by restarting worker
+docker compose restart worker
+docker compose logs -f worker | grep "\[verify\]"
+```
+
+### Telegram bot not responding
+
+```bash
+# Verify webhook is registered
+BOT_TOKEN=$(grep TELEGRAM_BOT_TOKEN .env | cut -d= -f2)
+curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo" | python3 -m json.tool
+
+# Check web logs for incoming webhook calls
+docker compose logs web --tail 50 | grep "telegram"
+
+# Re-register webhook if URL is wrong
+SECRET=$(grep TELEGRAM_SECRET_TOKEN .env | cut -d= -f2)
+curl -s "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook" \
+  -d "url=https://climate-awareness-gbc.qalmaq.cloud/api/telegram/webhook" \
+  -d "secret_token=${SECRET}" \
+  -d "allowed_updates=[\"message\"]"
 ```
 
 ### Database connection issues
@@ -585,19 +770,24 @@ docker compose exec postgres psql -U climate_gb -d climate_gb \
 
 All vars live in `.env` at project root. Mode 600.
 
-| Variable             | Required | Default      | Notes                                                                             |
-| -------------------- | -------- | ------------ | --------------------------------------------------------------------------------- |
-| `POSTGRES_PASSWORD`  | ✅       | —            | Generate: `openssl rand -base64 32`                                               |
-| `NEXTAUTH_URL`       | ✅       | —            | `https://climate-awareness-gbc.qalmaq.cloud`                                      |
-| `NEXTAUTH_SECRET`    | ✅       | —            | Generate: `openssl rand -base64 32`                                               |
-| `AUTH_SECRET`        | auto     | —            | Set by compose from `NEXTAUTH_SECRET`. Do not set manually.                       |
-| `ADMIN_EMAILS`       | ✅       | —            | `dev.qazxsw@gmail.com` (comma-separated for multiple)                             |
-| `OPENROUTER_API_KEY` | ✅ RAG   | —            | Free tier available. RAG AI disabled without this.                                |
-| `JINA_API_KEY`       | ✅ RAG   | —            | Free 1M tokens/day. Embeddings disabled without this — citations will not appear. |
-| `POSTGRES_DB`        | ✗        | `climate_gb` |                                                                                   |
-| `POSTGRES_USER`      | ✗        | `climate_gb` |                                                                                   |
-| `BLOCKED_IPS`        | ✗        | —            | Comma-separated IPs blocked at middleware                                         |
-| `AGENT_RATE_LIMIT`   | ✗        | `20`         | Max RAG questions per IP per day                                                  |
+| Variable                | Required   | Default      | Notes                                                                             |
+| ----------------------- | ---------- | ------------ | --------------------------------------------------------------------------------- |
+| `POSTGRES_PASSWORD`     | ✅         | —            | Generate: `openssl rand -base64 32`                                               |
+| `NEXTAUTH_URL`          | ✅         | —            | `https://climate-awareness-gbc.qalmaq.cloud`                                      |
+| `NEXTAUTH_SECRET`       | ✅         | —            | Generate: `openssl rand -base64 32`                                               |
+| `AUTH_SECRET`           | auto       | —            | Set by compose from `NEXTAUTH_SECRET`. Do not set manually.                       |
+| `ADMIN_EMAILS`          | ✅         | —            | `dev.qazxsw@gmail.com` (comma-separated for multiple)                             |
+| `OPENROUTER_API_KEY`    | ✅ RAG+AI  | —            | Free tier. Used for RAG (LLM answers) and AI alert verification (verify-alerts).  |
+| `JINA_API_KEY`          | ✅ RAG     | —            | Free 1M tokens/day. Embeddings disabled without this — citations will not appear. |
+| `TELEGRAM_BOT_TOKEN`    | ✅ Phase 2 | —            | From BotFather (`/newbot`). Telegram commands + subscriber push disabled without. |
+| `TELEGRAM_SECRET_TOKEN` | ✅ Phase 2 | —            | Random secret validating webhook calls. Generate: `openssl rand -base64 24`       |
+| `TWILIO_ACCOUNT_SID`    | optional   | —            | Twilio account SID (`ACxxx...`). SMS opt-in disabled if not set.                  |
+| `TWILIO_AUTH_TOKEN`     | optional   | —            | Twilio auth token. Required with SID.                                             |
+| `TWILIO_FROM_NUMBER`    | optional   | —            | E.164 Twilio number (e.g. `+12065551234`). Required with SID.                     |
+| `POSTGRES_DB`           | ✗          | `climate_gb` |                                                                                   |
+| `POSTGRES_USER`         | ✗          | `climate_gb` |                                                                                   |
+| `BLOCKED_IPS`           | ✗          | —            | Comma-separated IPs blocked at middleware                                         |
+| `AGENT_RATE_LIMIT`      | ✗          | `20`         | Max RAG questions per IP per day                                                  |
 
 ### Update a var after first deploy
 
