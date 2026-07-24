@@ -10,7 +10,27 @@ import { authConfig } from './auth.config';
 
 // Email allowlist — only these addresses can sign in as admin.
 // Fail-closed: if unset, no admin logins are permitted.
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? '').split(',').filter(Boolean);
+// Accepts JSON array (["a@b.com"]) or comma-separated (a@b.com,c@d.com); trims whitespace.
+function parseAdminEmails(raw: string): string[] {
+  const s = raw.trim();
+  if (s.startsWith('[')) {
+    try {
+      const a = JSON.parse(s) as unknown;
+      if (Array.isArray(a))
+        return (a as unknown[])
+          .map(String)
+          .map((e) => e.trim())
+          .filter(Boolean);
+    } catch {
+      // fall through to comma-split
+    }
+  }
+  return s
+    .split(',')
+    .map((e) => e.trim())
+    .filter(Boolean);
+}
+const ADMIN_EMAILS = parseAdminEmails(process.env.ADMIN_EMAILS ?? '');
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,

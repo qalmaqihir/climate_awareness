@@ -9,8 +9,17 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const raw = searchParams.get('callbackUrl') ?? '/admin';
-  // Reject absolute URLs and protocol-relative URLs to prevent open redirect.
-  const callbackUrl = raw.startsWith('/') && !raw.startsWith('//') ? raw : '/admin';
+  // Reject absolute, protocol-relative, and URL-encoded protocol-relative URLs.
+  function safeCallbackPath(value: string, fallback: string): string {
+    if (!value.startsWith('/') || value.startsWith('//')) return fallback;
+    try {
+      if (decodeURIComponent(value).startsWith('//')) return fallback;
+    } catch {
+      return fallback;
+    }
+    return value;
+  }
+  const callbackUrl = safeCallbackPath(raw, '/admin');
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

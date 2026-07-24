@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { users } from '@/lib/schema';
-import { AddContributorForm, RevokeButton } from './ContributorActions';
+import { AddContributorForm, ResetPasswordButton, RevokeButton } from './ContributorActions';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,6 +34,7 @@ export default async function ContributorsPage() {
               <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
                 <th className="px-4 py-3">Email</th>
                 <th className="px-4 py-3">Name</th>
+                <th className="px-4 py-3">Password</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
@@ -42,6 +43,9 @@ export default async function ContributorsPage() {
                 <tr key={c.id} className="hover:bg-slate-50">
                   <td className="px-4 py-3 font-medium text-slate-800">{c.email}</td>
                   <td className="px-4 py-3 text-slate-500">{c.name ?? '—'}</td>
+                  <td className="px-4 py-3">
+                    <ResetPasswordButton id={c.id} email={c.email ?? ''} />
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <RevokeButton id={c.id} email={c.email ?? ''} />
                   </td>

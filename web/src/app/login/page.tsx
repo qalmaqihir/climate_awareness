@@ -8,8 +8,17 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const raw = searchParams.get('callbackUrl') ?? '/report';
-  // Reject absolute and protocol-relative URLs — open-redirect guard.
-  const callbackUrl = raw.startsWith('/') && !raw.startsWith('//') ? raw : '/report';
+  // Reject absolute, protocol-relative, and URL-encoded protocol-relative URLs.
+  function safeCallbackPath(value: string, fallback: string): string {
+    if (!value.startsWith('/') || value.startsWith('//')) return fallback;
+    try {
+      if (decodeURIComponent(value).startsWith('//')) return fallback;
+    } catch {
+      return fallback;
+    }
+    return value;
+  }
+  const callbackUrl = safeCallbackPath(raw, '/report');
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

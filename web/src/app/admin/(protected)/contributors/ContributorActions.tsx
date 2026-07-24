@@ -95,6 +95,89 @@ export function AddContributorForm() {
   );
 }
 
+// ─── Reset password form ──────────────────────────────────────────────────────
+
+export function ResetPasswordButton({ id, email }: { id: string; email: string }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    const form = e.currentTarget;
+    const password = (form.elements.namedItem('password') as HTMLInputElement).value;
+    try {
+      const res = await fetch(`/api/admin/contributors/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setError(typeof json.error === 'string' ? json.error : 'Reset failed');
+      } else {
+        setSuccess(true);
+        form.reset();
+        setTimeout(() => {
+          setOpen(false);
+          setSuccess(false);
+        }, 1500);
+      }
+    } catch {
+      setError('Network error — please retry');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="text-xs text-slate-500 hover:text-slate-700">
+        Reset password
+      </button>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex items-center gap-2">
+      {error && <span className="text-xs text-red-600">{error}</span>}
+      {success && <span className="text-xs text-emerald-600">Password updated</span>}
+      {!success && (
+        <>
+          <input
+            name="password"
+            type="password"
+            required
+            minLength={8}
+            placeholder={`New password for ${email}`}
+            className="rounded border border-slate-300 px-2 py-1 text-xs focus:border-teal-500 focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className="rounded bg-slate-700 px-2 py-1 text-xs text-white hover:bg-slate-800 disabled:opacity-50"
+          >
+            {loading ? 'Saving…' : 'Save'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              setError(null);
+            }}
+            className="text-xs text-slate-400 hover:text-slate-600"
+          >
+            Cancel
+          </button>
+        </>
+      )}
+    </form>
+  );
+}
+
 // ─── Revoke button ────────────────────────────────────────────────────────────
 
 export function RevokeButton({ id, email }: { id: string; email: string }) {

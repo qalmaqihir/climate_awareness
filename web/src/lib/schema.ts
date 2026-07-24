@@ -1,6 +1,7 @@
 import {
   bigint,
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -374,7 +375,10 @@ export const incidentRelations = pgTable(
     createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [unique('incident_relations_pair_unique').on(t.sourceEventId, t.targetEventId)],
+  (t) => [
+    unique('incident_relations_pair_unique').on(t.sourceEventId, t.targetEventId),
+    check('incident_relations_canonical_order', sql`${t.sourceEventId} < ${t.targetEventId}`),
+  ],
 );
 
 export const reviewDecisions = pgTable(

@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod/v4';
 import { auth } from '@/lib/auth';
-import { getLeads } from '@/lib/leads-queries';
+import { getLeads, LEADS_PER_PAGE } from '@/lib/leads-queries';
 import type { LeadState } from '@/lib/schema';
 
 const VALID_STATES: LeadState[] = [
@@ -15,7 +15,7 @@ const VALID_STATES: LeadState[] = [
 
 const querySchema = z.object({
   state: z.enum(VALID_STATES as [LeadState, ...LeadState[]]).optional(),
-  limit: z.coerce.number().int().min(1).max(500).default(200),
+  page: z.coerce.number().int().min(1).default(1),
 });
 
 export async function GET(req: NextRequest) {
@@ -30,6 +30,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const rows = await getLeads({ state: parsed.data.state }, parsed.data.limit);
-  return NextResponse.json({ leads: rows, total: rows.length });
+  const { state, page } = parsed.data;
+  const offset = (page - 1) * LEADS_PER_PAGE;
+  const rows = await getLeads({ state }, LEADS_PER_PAGE, offset);
+  return NextResponse.json({
+    leads: rows,
+    page,
+    perPage: LEADS_PER_PAGE,
+    hasMore: rows.length === LEADS_PER_PAGE,
+  });
 }

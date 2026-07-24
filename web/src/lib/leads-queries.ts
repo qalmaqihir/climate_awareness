@@ -3,7 +3,13 @@ import { db } from './db';
 import { leads, leadEvidence, users } from './schema';
 import type { LeadState } from './schema';
 
-export async function getLeads(filter: { state?: LeadState } = {}, limit = 200) {
+export const LEADS_PER_PAGE = 50;
+
+export async function getLeads(
+  filter: { state?: LeadState } = {},
+  limit = LEADS_PER_PAGE,
+  offset = 0,
+) {
   const where = filter.state !== undefined ? eq(leads.state, filter.state) : undefined;
   return db
     .select({
@@ -21,7 +27,8 @@ export async function getLeads(filter: { state?: LeadState } = {}, limit = 200) 
     .from(leads)
     .where(where)
     .orderBy(desc(leads.createdAt))
-    .limit(limit);
+    .limit(limit)
+    .offset(offset);
 }
 
 export type LeadListItem = Awaited<ReturnType<typeof getLeads>>[number];

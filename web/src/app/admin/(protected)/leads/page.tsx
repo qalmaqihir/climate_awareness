@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { format } from 'date-fns';
 import type { LeadState } from '@/lib/schema';
-import { getLeads } from '@/lib/leads-queries';
+import { getLeads, LEADS_PER_PAGE } from '@/lib/leads-queries';
 import { LEAD_STATE_LABELS, LEAD_STATE_COLORS, LEAD_QUEUE_TABS } from '@/lib/leads-state';
 import { EVENT_TYPE_LABELS } from '@/lib/constants';
 
@@ -16,16 +16,27 @@ const VALID_LEAD_STATES: LeadState[] = [
   'archived',
 ];
 
-type Props = { searchParams: Promise<{ state?: string }> };
+type Props = { searchParams: Promise<{ state?: string; page?: string }> };
 
 export default async function LeadsQueuePage({ searchParams }: Props) {
-  const { state: rawState } = await searchParams;
+  const { state: rawState, page: rawPage } = await searchParams;
   // Validate rawState against known states to prevent unchecked values reaching getLeads
   const isValidState = rawState !== undefined && VALID_LEAD_STATES.includes(rawState as LeadState);
   const activeTab: LeadState | 'all' = isValidState ? (rawState as LeadState) : 'all';
   const filterState = activeTab === 'all' ? undefined : activeTab;
 
-  const rows = await getLeads({ state: filterState }, 200);
+  const page = Math.max(1, parseInt(rawPage ?? '1', 10) || 1);
+  const offset = (page - 1) * LEADS_PER_PAGE;
+  const rows = await getLeads({ state: filterState }, LEADS_PER_PAGE, offset);
+  const hasMore = rows.length === LEADS_PER_PAGE;
+
+  function pageUrl(p: number) {
+    const params = new URLSearchParams();
+    if (activeTab !== 'all') params.set('state', activeTab);
+    if (p > 1) params.set('page', String(p));
+    const qs = params.toString();
+    return `/admin/leads${qs ? `?${qs}` : ''}`;
+  }
 
   return (
     <div>
@@ -111,6 +122,31 @@ export default async function LeadsQueuePage({ searchParams }: Props) {
           </table>
         )}
       </div>
+
+      {/* Pagination */}
+      {(page > 1 || hasMore) && (
+        <div className="mt-4 flex items-center justify-between text-sm">
+          <span className="text-slate-500">Page {page}</span>
+          <div className="flex gap-2">
+            {page > 1 && (
+              <Link
+                href={pageUrl(page - 1)}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-slate-700 hover:bg-slate-50"
+              >
+                ← Previous
+              </Link>
+            )}
+            {hasMore && (
+              <Link
+                href={pageUrl(page + 1)}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-slate-700 hover:bg-slate-50"
+              >
+                Next →
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

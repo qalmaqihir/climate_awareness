@@ -6,6 +6,35 @@
 
 **Whole-project plan:** [`plan.md`](plan.md). This document owns map-specific work only. Update it after every phase and record new evidence in `map_idea.md` before expanding scope.
 
+---
+
+## Implementation Status
+
+| Phase                                             | Status      | Commit         |
+| ------------------------------------------------- | ----------- | -------------- |
+| P1.1 — Private lead data model + contributor auth | ✅ Done     | `dc7c2f4`      |
+| P1.2 — Moderator review workspace                 | ✅ Done     | `124dae8`      |
+| P1.3 — Contributor submission form                | ✅ Done     | `af875c5`      |
+| Deferred P2 bug fixes (see below)                 | ✅ Done     | pending commit |
+| P1.4 — Historical discovery + observability       | Not started | —              |
+| P2.x — Channel automation, heatmap, extensions    | Not started | —              |
+
+### Deferred P2 items resolved (2026-07-24)
+
+- **`incident_relations` reverse-pair constraint** — added `CHECK (source_event_id < target_event_id)` to schema + migration `0010_incident_relations_canonical_order.sql`. Canonical ordering enforced at DB level.
+- **`ADMIN_EMAILS` dual-parsing** — `auth.ts` and `contributors/route.ts` now accept both JSON array (`["a@b.com"]`) and comma-separated (`a@b.com,b@c.com`) formats with whitespace trimming. Fail-closed behaviour preserved.
+- **Pagination** — admin leads queue (`/admin/leads`) now pages at 50 per page with prev/next links driven by `?page=N`. `getLeads()` takes `offset` param. API route exposes `page`, `perPage`, `hasMore`.
+- **Password-change flow** — `PATCH /api/admin/contributors/[id]` resets a contributor's password (admin only). `ResetPasswordButton` component in contributors table expands inline to a password field.
+- **`callbackUrl` URL-encoded-slash open-redirect** — both login pages (`/login`, `/admin/login`) now also check `decodeURIComponent(raw).startsWith('//')` and fall back to safe default. Handles `/%2Fevil.com` bypass.
+
+### Pending before P1 release gate
+
+- VPS deploy of P1.1–P1.3 (user action) — run migration `0007_p1_leads_schema.sql` + `0010_incident_relations_canonical_order.sql`
+- Codex code review of commits `dc7c2f4`, `124dae8`, `af875c5`
+- `seed-events.ts` Chitral expansion commit (unstaged, excluded from P1.2)
+
+---
+
 ## Delivery rules
 
 - Implement and verify one phase at a time. Do not start a later phase merely because its schema is conceivable.

@@ -6,7 +6,26 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { users } from '@/lib/schema';
 
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? '').split(',').filter(Boolean);
+function parseAdminEmails(raw: string): string[] {
+  const s = raw.trim();
+  if (s.startsWith('[')) {
+    try {
+      const a = JSON.parse(s) as unknown;
+      if (Array.isArray(a))
+        return (a as unknown[])
+          .map(String)
+          .map((e) => e.trim())
+          .filter(Boolean);
+    } catch {
+      // fall through to comma-split
+    }
+  }
+  return s
+    .split(',')
+    .map((e) => e.trim())
+    .filter(Boolean);
+}
+const ADMIN_EMAILS = parseAdminEmails(process.env.ADMIN_EMAILS ?? '');
 
 const postSchema = z.object({
   email: z.string().email().max(254).toLowerCase(),
