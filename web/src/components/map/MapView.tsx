@@ -391,7 +391,8 @@ export default function MapView() {
     (filters.types.size < ALL_TYPES.length ? 1 : 0) +
     filters.districts.size +
     (filters.from || filters.to ? 1 : 0) +
-    (filters.state ? 1 : 0);
+    (filters.state ? 1 : 0) +
+    (filters.search.trim() ? 1 : 0);
 
   return (
     <div className="relative flex h-full w-full">

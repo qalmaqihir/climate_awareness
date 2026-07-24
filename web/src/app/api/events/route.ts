@@ -44,6 +44,10 @@ export async function GET(req: NextRequest) {
   const stateParam = searchParams.get('state');
   const state = stateParam === 'active' || stateParam === 'resolved' ? stateParam : undefined;
 
+  // ── full-text search ─────────────────────────────────────────────────────────
+  const searchRaw = searchParams.get('q')?.trim().slice(0, 200) ?? '';
+  const search = searchRaw || undefined;
+
   let rows;
   try {
     rows = await getEvents(
@@ -54,6 +58,7 @@ export async function GET(req: NextRequest) {
         to,
         status: 'verified',
         state,
+        search,
       },
       MAX_RESULTS,
     );
