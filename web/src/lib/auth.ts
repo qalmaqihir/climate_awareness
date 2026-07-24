@@ -29,7 +29,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const password = credentials?.password as string | undefined;
 
         if (!email || !password) return null;
-        if (ADMIN_EMAILS.length > 0 && !ADMIN_EMAILS.includes(email)) return null;
+        // Fail-closed: if ADMIN_EMAILS is not configured, block all logins.
+        if (ADMIN_EMAILS.length === 0 || !ADMIN_EMAILS.includes(email)) return null;
 
         const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
 

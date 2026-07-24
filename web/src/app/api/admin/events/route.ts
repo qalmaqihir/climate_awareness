@@ -2,9 +2,9 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod/v4';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { events } from '@/lib/schema';
+import { events, sources } from '@/lib/schema';
 import { COVERAGE_ENVELOPE } from '@/lib/constants';
-import { desc } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { sanitizeEmbed } from '@/lib/sanitize';
 
 const createSchema = z
@@ -26,8 +26,8 @@ const createSchema = z
     status: z.enum(['verified', 'unverified', 'disputed', 'archived']).default('unverified'),
     // public lifecycle: separate from editorial status
     state: z.enum(['active', 'resolved']).default('active'),
-    district: z.string().optional(),
-    locationName: z.string().optional(),
+    district: z.string().max(100).optional(),
+    locationName: z.string().max(300).optional(),
     // honest location model: precision must always be set when coordinates are present
     locationPrecision: z.enum(['exact', 'approximate', 'district', 'pending']).default('pending'),
     locationRationale: z.string().max(1000).optional(),
@@ -106,6 +106,18 @@ export async function POST(req: NextRequest) {
   }
 
   const d = parsed.data;
+
+  if (d.sourceId != null) {
+    const [src] = await db
+      .select({ id: sources.id })
+      .from(sources)
+      .where(eq(sources.id, d.sourceId))
+      .limit(1);
+    if (!src) {
+      return NextResponse.json({ error: 'sourceId not found' }, { status: 422 });
+    }
+  }
+
   const locationWkt =
     d.latitude != null && d.longitude != null ? `POINT(${d.longitude} ${d.latitude})` : undefined;
 

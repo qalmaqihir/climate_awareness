@@ -88,13 +88,17 @@ export async function embedUnindexedEvents() {
     try {
       const embeddings = await fetchEmbeddings(texts);
 
-      for (let j = 0; j < batch.length; j++) {
-        const id = batch[j].id as number;
-        const vec = `[${embeddings[j].join(',')}]`;
-        await db.execute(
-          sql`UPDATE events SET embedding_v1 = ${vec}::vector, updated_at = NOW() WHERE id = ${id}`,
-        );
-      }
+      // Bulk UPDATE — one round-trip per batch instead of N individual updates
+      await db.execute(
+        sql`UPDATE events AS e
+            SET embedding_v1 = v.vec::vector,
+                updated_at = NOW()
+            FROM (VALUES ${sql.join(
+              batch.map((r, j) => sql`(${r.id as number}::int, ${`[${embeddings[j].join(',')}]`})`),
+              sql`, `,
+            )}) AS v(id, vec)
+            WHERE e.id = v.id`,
+      );
 
       embedded += batch.length;
       console.log(

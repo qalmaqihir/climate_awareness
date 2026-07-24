@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useParams } from 'next/navigation';
 import {
   GB_DISTRICTS,
   EVENT_TYPE_LABELS,
@@ -20,7 +20,7 @@ interface FormState {
   eventType: EventType;
   eventSubtype: string;
   severity: EventSeverity;
-  status: 'verified' | 'unverified';
+  status: 'verified' | 'unverified' | 'disputed' | 'archived';
   state: 'active' | 'resolved';
   district: string;
   locationName: string;
@@ -34,68 +34,58 @@ interface FormState {
   reportedAt: string;
 }
 
-const EMPTY_FORM: FormState = {
-  title: '',
-  description: '',
-  eventType: 'flood',
-  eventSubtype: '',
-  severity: 'moderate',
-  status: 'unverified',
-  state: 'active',
-  district: '',
-  locationName: '',
-  locationPrecision: 'pending',
-  locationRationale: '',
-  latitude: '',
-  longitude: '',
-  sourceUrl: '',
-  embedHtml: '',
-  affectedCount: '',
-  reportedAt: new Date().toISOString().slice(0, 16),
-};
-
-export default function NewEventPage() {
+export default function EditEventPage() {
   const router = useRouter();
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [oembedUrl, setOembedUrl] = useState('');
-  const [oembedLoading, setOembedLoading] = useState(false);
-  const [oembedError, setOembedError] = useState('');
+  const { id } = useParams<{ id: string }>();
+
+  const [form, setForm] = useState<FormState | null>(null);
+  const [loadError, setLoadError] = useState('');
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitError, setSubmitError] = useState('');
 
+  useEffect(() => {
+    fetch(`/api/admin/events/${id}`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((e) => {
+        setForm({
+          title: e.title ?? '',
+          description: e.description ?? '',
+          eventType: e.eventType ?? 'flood',
+          eventSubtype: e.eventSubtype ?? '',
+          severity: e.severity ?? 'moderate',
+          status: e.status ?? 'unverified',
+          state: e.state ?? 'active',
+          district: e.district ?? '',
+          locationName: e.locationName ?? '',
+          locationPrecision: e.locationPrecision ?? 'pending',
+          locationRationale: e.locationRationale ?? '',
+          latitude: e.latitude != null ? String(e.latitude) : '',
+          longitude: e.longitude != null ? String(e.longitude) : '',
+          sourceUrl: e.sourceUrl ?? '',
+          embedHtml: e.embedHtml ?? '',
+          affectedCount: e.affectedCount != null ? String(e.affectedCount) : '',
+          // Treat stored UTC timestamp as UTC for the datetime-local input
+          reportedAt: e.reportedAt ? new Date(e.reportedAt).toISOString().slice(0, 16) : '',
+        });
+      })
+      .catch((err: Error) => setLoadError(err.message ?? 'Failed to load event'));
+  }, [id]);
+
   function set(field: keyof FormState) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
-      setForm((p) => ({ ...p, [field]: e.target.value }));
-  }
-
-  async function handleOEmbed() {
-    if (!oembedUrl) return;
-    setOembedLoading(true);
-    setOembedError('');
-
-    const res = await fetch(`/api/admin/oembed?url=${encodeURIComponent(oembedUrl)}`);
-    const data = await res.json();
-    setOembedLoading(false);
-
-    if (!res.ok) {
-      setOembedError(data.error ?? 'Failed to fetch oEmbed');
-      return;
-    }
-
-    setForm((p) => ({
-      ...p,
-      sourceUrl: oembedUrl,
-      embedHtml: data.html ?? p.embedHtml,
-      title: p.title || (data.authorName ? `Post by ${data.authorName}` : p.title),
-    }));
+      setForm((p) => (p ? { ...p, [field]: e.target.value } : p));
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!form) return;
     setSubmitLoading(true);
     setSubmitError('');
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       title: form.title,
       description: form.description || undefined,
       eventType: form.eventType,
@@ -107,17 +97,21 @@ export default function NewEventPage() {
       locationName: form.locationName || undefined,
       locationPrecision: form.locationPrecision,
       locationRationale: form.locationRationale || undefined,
-      latitude: form.latitude ? parseFloat(form.latitude) : undefined,
-      longitude: form.longitude ? parseFloat(form.longitude) : undefined,
       sourceUrl: form.sourceUrl || undefined,
       embedHtml: form.embedHtml || undefined,
       affectedCount: form.affectedCount ? parseInt(form.affectedCount) : undefined,
-      // Append :00Z to treat the datetime-local value as UTC, not local browser time
+      // Append :00Z so datetime-local string is treated as UTC, not local time
       reportedAt: new Date(form.reportedAt + ':00Z').toISOString(),
     };
 
-    const res = await fetch('/api/admin/events', {
-      method: 'POST',
+    // Only include coordinates when both are set
+    if (form.latitude && form.longitude) {
+      payload.latitude = parseFloat(form.latitude);
+      payload.longitude = parseFloat(form.longitude);
+    }
+
+    const res = await fetch(`/api/admin/events/${id}`, {
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
@@ -126,7 +120,7 @@ export default function NewEventPage() {
     setSubmitLoading(false);
 
     if (!res.ok) {
-      setSubmitError(JSON.stringify(data.error ?? 'Failed to create event'));
+      setSubmitError(JSON.stringify(data.error ?? 'Failed to update event'));
       return;
     }
 
@@ -134,39 +128,34 @@ export default function NewEventPage() {
     router.refresh();
   }
 
+  if (loadError) {
+    return (
+      <div className="mx-auto max-w-2xl">
+        <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          Failed to load event: {loadError}
+        </p>
+        <a
+          href="/admin/events"
+          className="mt-4 inline-block text-sm text-slate-500 hover:underline"
+        >
+          ← Back to events
+        </a>
+      </div>
+    );
+  }
+
+  if (!form) {
+    return (
+      <div className="mx-auto max-w-2xl">
+        <p className="text-sm text-slate-400">Loading event…</p>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="mb-6 text-2xl font-bold text-slate-900">Add event</h1>
+      <h1 className="mb-6 text-2xl font-bold text-slate-900">Edit event</h1>
 
-      {/* oEmbed autofill */}
-      <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="mb-3 text-sm font-semibold text-slate-700">
-          Autofill from social media post
-        </h2>
-        <div className="flex gap-2">
-          <input
-            type="url"
-            placeholder="Paste Facebook or Instagram post URL…"
-            value={oembedUrl}
-            onChange={(e) => setOembedUrl(e.target.value)}
-            className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none"
-          />
-          <button
-            type="button"
-            onClick={handleOEmbed}
-            disabled={oembedLoading || !oembedUrl}
-            className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-50"
-          >
-            {oembedLoading ? 'Fetching…' : 'Fetch'}
-          </button>
-        </div>
-        {oembedError && <p className="mt-2 text-xs text-red-600">{oembedError}</p>}
-        {form.embedHtml && (
-          <p className="mt-2 text-xs text-emerald-600">✓ Embed fetched — form fields prefilled</p>
-        )}
-      </div>
-
-      {/* Main form */}
       <form onSubmit={handleSubmit} className="rounded-xl border border-slate-200 bg-white p-5">
         {submitError && (
           <div className="mb-4 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700">
@@ -191,11 +180,9 @@ export default function NewEventPage() {
               value={form.description}
               onChange={set('description')}
               className={inputClass}
-              placeholder="Optional summary…"
             />
           </Field>
 
-          {/* Event type + subtype */}
           <div className="grid grid-cols-2 gap-4">
             <Field label="Event type *">
               <select
@@ -203,7 +190,7 @@ export default function NewEventPage() {
                 value={form.eventType}
                 onChange={(e) => {
                   const t = e.target.value as EventType;
-                  setForm((p) => ({ ...p, eventType: t, eventSubtype: '' }));
+                  setForm((p) => (p ? { ...p, eventType: t, eventSubtype: '' } : p));
                 }}
                 className={inputClass}
               >
@@ -232,7 +219,6 @@ export default function NewEventPage() {
             </Field>
           </div>
 
-          {/* Severity + Status */}
           <div className="grid grid-cols-2 gap-4">
             <Field label="Severity *">
               <select
@@ -253,11 +239,12 @@ export default function NewEventPage() {
               <select value={form.status} onChange={set('status')} className={inputClass}>
                 <option value="unverified">Unverified</option>
                 <option value="verified">Verified</option>
+                <option value="disputed">Disputed</option>
+                <option value="archived">Archived</option>
               </select>
             </Field>
           </div>
 
-          {/* Incident state */}
           <Field label="Incident state">
             <select value={form.state} onChange={set('state')} className={inputClass}>
               {Object.entries(INCIDENT_STATE_LABELS).map(([k, v]) => (
@@ -267,12 +254,10 @@ export default function NewEventPage() {
               ))}
             </select>
             <p className="mt-1 text-[11px] text-slate-400">
-              Active = acute impact ongoing. Resolved = incident ended (does not archive the
-              record).
+              Active = acute impact ongoing. Resolved = incident ended.
             </p>
           </Field>
 
-          {/* District + Location name */}
           <div className="grid grid-cols-2 gap-4">
             <Field label="District">
               <select value={form.district} onChange={set('district')} className={inputClass}>
@@ -295,7 +280,6 @@ export default function NewEventPage() {
             </Field>
           </div>
 
-          {/* Coordinates */}
           <div className="grid grid-cols-2 gap-4">
             <Field label="Latitude (34.5 – 37.5)">
               <input
@@ -324,7 +308,6 @@ export default function NewEventPage() {
             </Field>
           </div>
 
-          {/* Location precision + rationale */}
           <Field label="Location precision *">
             <select
               value={form.locationPrecision}
@@ -337,10 +320,6 @@ export default function NewEventPage() {
                 </option>
               ))}
             </select>
-            <p className="mt-1 text-[11px] text-slate-400">
-              exact = source supports the specific site · approximate = named locality, uncertain
-              site · district = multi-valley/district-wide · pending = no publishable location yet
-            </p>
           </Field>
 
           <Field label="Location rationale (moderator note — not public)">
@@ -349,11 +328,10 @@ export default function NewEventPage() {
               value={form.locationRationale}
               onChange={set('locationRationale')}
               className={inputClass}
-              placeholder="Source: ICIMOD GLOF report, Figure 3. Coordinates from Hassanabad bridge GPS."
+              placeholder="Source: ICIMOD GLOF report, Figure 3."
             />
           </Field>
 
-          {/* Dates + affected count */}
           <div className="grid grid-cols-2 gap-4">
             <Field label="Reported at (UTC) *">
               <input
@@ -388,7 +366,7 @@ export default function NewEventPage() {
           </Field>
 
           {form.embedHtml && (
-            <Field label="Embed HTML (read-only — set via oEmbed fetch above)">
+            <Field label="Embed HTML (set via oEmbed on new-event form)">
               <textarea
                 rows={4}
                 value={form.embedHtml}
@@ -405,7 +383,7 @@ export default function NewEventPage() {
             disabled={submitLoading}
             className="rounded-lg bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
           >
-            {submitLoading ? 'Saving…' : 'Save event'}
+            {submitLoading ? 'Saving…' : 'Save changes'}
           </button>
           <a href="/admin/events" className="text-sm text-slate-500 hover:text-slate-700">
             Cancel

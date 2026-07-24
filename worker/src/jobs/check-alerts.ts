@@ -8,7 +8,8 @@
  * NDMA /public/situation-reports: 404 — covered via ReliefWeb instead.
  * PDMA pdma.gob.pk: Balochistan province, not GB — removed.
  *
- * Deduplication: skip if source_url already exists in alerts table.
+ * Deduplication: handled atomically by INSERT ... ON CONFLICT (source_url) DO NOTHING.
+ * The alerts.source_url column has a UNIQUE constraint (migration 0006).
  * Runs every hour via cron in index.ts.
  */
 import * as cheerio from 'cheerio';
@@ -86,41 +87,51 @@ async function getSourceId(slug: string): Promise<number | null> {
   return (res.rows[0]?.id as number) ?? null;
 }
 
-async function getExistingUrlSet(urls: string[]): Promise<Set<string>> {
-  if (urls.length === 0) return new Set();
-  const res = await db.execute(
-    sql`SELECT source_url FROM alerts WHERE source_url = ANY(ARRAY[${sql.join(
-      urls.map((u) => sql`${u}`),
-      sql`, `,
-    )}])`,
-  );
-  return new Set(res.rows.map((r) => r.source_url as string));
-}
-
-async function insertAlert(params: {
+interface AlertCandidate {
   title: string;
   body: string;
   alertType: string;
   level: string;
   district: string | null;
-  sourceId: number | null;
   sourceUrl: string | null;
   issuedAt: Date;
-}) {
-  await db.execute(sql`
+}
+
+/**
+ * Batch-inserts alert candidates using ON CONFLICT (source_url) DO NOTHING.
+ * Requires the UNIQUE constraint on alerts.source_url (migration 0006).
+ * Returns the number of rows actually inserted.
+ */
+async function batchInsertAlerts(
+  candidates: AlertCandidate[],
+  sourceId: number | null,
+): Promise<number> {
+  if (candidates.length === 0) return 0;
+
+  const result = await db.execute(sql`
     INSERT INTO alerts
       (title, body, alert_type, level, district, source_id, source_url, is_active, issued_at)
     VALUES
-      (${params.title.slice(0, 500)},
-       ${params.body.slice(0, 3000)},
-       ${params.alertType},
-       ${params.level},
-       ${params.district},
-       ${params.sourceId},
-       ${params.sourceUrl},
-       true,
-       ${params.issuedAt.toISOString()})
+      ${sql.join(
+        candidates.map(
+          (c) => sql`(
+            ${c.title.slice(0, 500)},
+            ${c.body.slice(0, 3000)},
+            ${c.alertType},
+            ${c.level},
+            ${c.district},
+            ${sourceId},
+            ${c.sourceUrl},
+            true,
+            ${c.issuedAt.toISOString()}
+          )`,
+        ),
+        sql`, `,
+      )}
+    ON CONFLICT (source_url) DO NOTHING
   `);
+
+  return (result.rowCount as number | null) ?? 0;
 }
 
 // ─── ReliefWeb API ────────────────────────────────────────────────────────────
@@ -162,10 +173,8 @@ async function scrapeReliefWeb(sourceId: number | null) {
   const json = (await res.json()) as { data?: Array<{ fields: Record<string, unknown> }> };
   const items = json.data ?? [];
 
-  const candidateUrls = items.map((i) => String(i.fields.url ?? '').trim()).filter(Boolean);
-  const existingUrls = await getExistingUrlSet(candidateUrls);
+  const candidates: AlertCandidate[] = [];
 
-  let inserted = 0;
   for (const item of items) {
     const f = item.fields;
     const title = String(f.title ?? '').trim();
@@ -175,22 +184,20 @@ async function scrapeReliefWeb(sourceId: number | null) {
     const issuedAt = dateStr ? new Date(dateStr) : new Date();
 
     if (!title || !isGbRelevant(title + ' ' + body)) continue;
-    if (url && existingUrls.has(url)) continue;
 
     const combined = title + ' ' + body;
-    await insertAlert({
+    candidates.push({
       title,
       body: body || title,
       alertType: inferAlertType(combined),
       level: inferLevel(combined),
       district: null,
-      sourceId,
       sourceUrl: url || null,
       issuedAt,
     });
-    inserted++;
   }
 
+  const inserted = await batchInsertAlerts(candidates, sourceId);
   console.log(`[alerts] ReliefWeb: ${inserted} new GB-relevant reports inserted`);
 }
 
@@ -235,12 +242,7 @@ async function scrapePamirTimes(sourceId: number | null) {
     'warning',
   ];
 
-  const pamirCandidateUrls = items
-    .map((el) => $('link', el).text().trim() || $('guid', el).text().trim())
-    .filter(Boolean);
-  const pamirExistingUrls = await getExistingUrlSet(pamirCandidateUrls);
-
-  let inserted = 0;
+  const candidates: AlertCandidate[] = [];
 
   for (const el of items) {
     const title = $('title', el).first().text().trim();
@@ -260,25 +262,21 @@ async function scrapePamirTimes(sourceId: number | null) {
     if (!isGbRelevant(combined)) continue;
     if (!DISASTER_KEYWORDS.some((kw) => combined.includes(kw))) continue;
 
-    const sourceUrl = link || null;
-    if (sourceUrl && pamirExistingUrls.has(sourceUrl)) continue;
-
     const issuedAt = pubDateRaw ? new Date(pubDateRaw) : new Date();
     const safeDate = isNaN(issuedAt.getTime()) ? new Date() : issuedAt;
 
-    await insertAlert({
+    candidates.push({
       title: title.slice(0, 500),
       body: description.slice(0, 3000) || title,
       alertType: inferAlertType(combined),
       level: inferLevel(combined),
       district: null,
-      sourceId,
-      sourceUrl,
+      sourceUrl: link || null,
       issuedAt: safeDate,
     });
-    inserted++;
   }
 
+  const inserted = await batchInsertAlerts(candidates, sourceId);
   console.log(
     `[alerts] Pamir Times: ${inserted} new disaster alerts inserted (${items.length} items scanned)`,
   );
@@ -305,12 +303,7 @@ async function scrapeGDACS(sourceId: number | null) {
   const $ = cheerio.load(xml, { xml: true });
   const items = $('item').toArray();
 
-  const gdacsCandidateUrls = items
-    .map((el) => $('link', el).text().trim() || $('guid', el).text().trim())
-    .filter(Boolean);
-  const gdacsExistingUrls = await getExistingUrlSet(gdacsCandidateUrls);
-
-  let inserted = 0;
+  const candidates: AlertCandidate[] = [];
 
   for (const el of items) {
     const title = $('title', el).first().text().trim();
@@ -329,9 +322,6 @@ async function scrapeGDACS(sourceId: number | null) {
     // GDACS is global — only take Pakistan events, prefer GB-specific ones
     if (!isPakistanRelevant(combined)) continue;
 
-    const sourceUrl = link || null;
-    if (sourceUrl && gdacsExistingUrls.has(sourceUrl)) continue;
-
     const issuedAt = pubDateRaw ? new Date(pubDateRaw) : new Date();
     const safeDate = isNaN(issuedAt.getTime()) ? new Date() : issuedAt;
 
@@ -339,19 +329,18 @@ async function scrapeGDACS(sourceId: number | null) {
     const baseLevel = inferLevel(combined);
     const level = baseLevel === 'advisory' ? 'watch' : baseLevel;
 
-    await insertAlert({
+    candidates.push({
       title: title.slice(0, 500),
       body: description.slice(0, 3000) || title,
       alertType: inferAlertType(combined),
       level,
       district: null,
-      sourceId,
-      sourceUrl,
+      sourceUrl: link || null,
       issuedAt: safeDate,
     });
-    inserted++;
   }
 
+  const inserted = await batchInsertAlerts(candidates, sourceId);
   console.log(
     `[alerts] GDACS: ${inserted} Pakistan/GB alerts inserted (${items.length} items scanned)`,
   );

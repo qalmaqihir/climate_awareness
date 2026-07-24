@@ -6,6 +6,7 @@ import { db } from '@/lib/db';
 import { events } from '@/lib/schema';
 import { COVERAGE_ENVELOPE } from '@/lib/constants';
 import { sanitizeEmbed } from '@/lib/sanitize';
+import { getEventById } from '@/lib/queries';
 
 const patchSchema = z
   .object({
@@ -26,8 +27,8 @@ const patchSchema = z
     severity: z.enum(['low', 'moderate', 'high', 'critical']).optional(),
     status: z.enum(['verified', 'unverified', 'disputed', 'archived']).optional(),
     state: z.enum(['active', 'resolved']).optional(),
-    district: z.string().optional(),
-    locationName: z.string().optional(),
+    district: z.string().max(100).optional(),
+    locationName: z.string().max(300).optional(),
     locationPrecision: z.enum(['exact', 'approximate', 'district', 'pending']).optional(),
     locationRationale: z.string().max(1000).nullable().optional(),
     latitude: z.number().min(COVERAGE_ENVELOPE.minLat).max(COVERAGE_ENVELOPE.maxLat).optional(),
@@ -49,7 +50,11 @@ const patchSchema = z
   })
   .refine(
     (d) => {
-      if (d.locationPrecision === 'exact') return d.latitude != null && d.longitude != null;
+      // Only enforce when new coordinates are being explicitly sent (not a precision-only update).
+      // undefined means "leave existing DB value" — the event may already have valid coordinates.
+      if (d.locationPrecision === 'exact' && d.latitude !== undefined) {
+        return d.latitude != null && d.longitude != null;
+      }
       return true;
     },
     { message: 'exact precision requires latitude and longitude' },
@@ -59,6 +64,25 @@ async function requireAdmin() {
   const session = await auth();
   if (!session?.user?.isAdmin) return null;
   return session;
+}
+
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  if (!(await requireAdmin())) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const { id } = await params;
+  const eventId = parseInt(id);
+  if (isNaN(eventId)) {
+    return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
+  }
+
+  const event = await getEventById(eventId);
+  if (!event) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+
+  return NextResponse.json(event);
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

@@ -13,10 +13,9 @@ export default async function AdminDashboard() {
   try {
     [stats, recentEvents, activeAlerts] = await Promise.all([
       getEventStats(),
-      getEvents({ status: undefined }),
+      getEvents(undefined, 8),
       getActiveAlerts(5),
     ]);
-    recentEvents = recentEvents.slice(0, 8);
   } catch {
     // DB not yet available — show empty state
   }

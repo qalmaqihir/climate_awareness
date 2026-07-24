@@ -113,6 +113,8 @@ export const events = pgTable(
     index('events_status_idx').on(t.status),
     // Composite index for the most common query: verified events ordered by date
     index('events_status_reported_at_idx').on(t.status, t.reportedAt),
+    // State is a public filter parameter (active/resolved) — needs its own index
+    index('events_state_idx').on(t.state),
   ],
 );
 
@@ -132,7 +134,7 @@ export const alerts = pgTable(
     sourceId: integer('source_id').references(() => sources.id, {
       onDelete: 'set null',
     }),
-    sourceUrl: text('source_url'),
+    sourceUrl: text('source_url').unique('alerts_source_url_unique'),
     isActive: boolean('is_active').notNull().default(true),
     issuedAt: timestamp('issued_at', { withTimezone: true }).notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }),

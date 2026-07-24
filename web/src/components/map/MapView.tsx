@@ -332,6 +332,7 @@ export default function MapView() {
     const eventFeatures = map.queryRenderedFeatures(e.point, { layers: ['events-unclustered'] });
     if (eventFeatures.length > 0) {
       const f = eventFeatures[0];
+      if (!f.properties) return;
       const coords = (f.geometry as Point).coordinates;
       setPopup({
         longitude: coords[0],
@@ -344,9 +345,11 @@ export default function MapView() {
   const handleFeedItemClick = useCallback(
     (item: FeedItem) => {
       if (item.latitude != null && item.longitude != null && item.locationPrecision !== 'pending') {
+        const precisionZoom =
+          item.locationPrecision === 'exact' ? 13 : item.locationPrecision === 'district' ? 9 : 11;
         mapRef.current?.getMap()?.flyTo({
           center: [item.longitude, item.latitude],
-          zoom: 11,
+          zoom: precisionZoom,
           duration: 800,
         });
         setPopup({
@@ -588,20 +591,26 @@ export default function MapView() {
                     {item.eventSubtype &&
                       ` · ${EVENT_SUBTYPE_LABELS[item.eventSubtype] ?? item.eventSubtype}`}
                   </span>
-                  {item.state === 'active' && (
-                    <span className="ml-auto rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-600">
-                      Active
-                    </span>
-                  )}
-                  {item.locationPrecision === 'pending' && (
-                    <span className="ml-auto rounded bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-600">
-                      Location pending
-                    </span>
-                  )}
+                  {/* Single right-aligned badge: active takes priority over pending */}
+                  <span className="ml-auto flex-shrink-0">
+                    {item.state === 'active' ? (
+                      <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-600">
+                        Active
+                      </span>
+                    ) : item.locationPrecision === 'pending' ? (
+                      <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-600">
+                        Loc pending
+                      </span>
+                    ) : null}
+                  </span>
                 </div>
                 <p className="line-clamp-2 text-xs font-medium text-slate-800">{item.title}</p>
                 <p className="mt-0.5 text-xs text-slate-400">
-                  {item.district ?? 'GB'} · {format(new Date(item.reportedAt), 'MMM d, yyyy')}
+                  {item.district ?? 'GB'} ·{' '}
+                  {(() => {
+                    const d = new Date(item.reportedAt);
+                    return isNaN(d.getTime()) ? item.reportedAt : format(d, 'MMM d, yyyy');
+                  })()}
                 </p>
               </button>
             ))}
@@ -727,7 +736,12 @@ export default function MapView() {
                 <p className="mb-2 text-xs text-slate-500">
                   {popup.properties.locationName ?? popup.properties.district ?? 'Gilgit-Baltistan'}
                   {' · '}
-                  {format(new Date(popup.properties.reportedAt), 'MMM d, yyyy')}
+                  {(() => {
+                    const d = new Date(popup.properties.reportedAt);
+                    return isNaN(d.getTime())
+                      ? popup.properties.reportedAt
+                      : format(d, 'MMM d, yyyy');
+                  })()}
                 </p>
 
                 {popup.properties.affectedCount != null && (
