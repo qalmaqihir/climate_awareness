@@ -1,7 +1,22 @@
 import { and, desc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { db } from './db';
-import { alerts, events, sources } from './schema';
-import type { EventSeverity, EventState, EventStatus, EventSubtype, EventType } from './schema';
+import {
+  alerts,
+  events,
+  incidentRelations,
+  incidentUpdates,
+  leads,
+  reviewDecisions,
+  sources,
+} from './schema';
+import type {
+  EventSeverity,
+  EventState,
+  EventStatus,
+  EventSubtype,
+  EventType,
+  ReviewTargetType,
+} from './schema';
 
 export type EventRow = {
   id: number;
@@ -68,6 +83,8 @@ export interface EventFilters {
   status?: string;
   // public lifecycle filter — 'active' | 'resolved'
   state?: string;
+  // full-text substring search on title, district, locationName
+  search?: string;
 }
 
 export async function getEvents(filters?: EventFilters, limit?: number): Promise<EventRow[]> {
@@ -90,6 +107,12 @@ export async function getEvents(filters?: EventFilters, limit?: number): Promise
   }
   if (filters?.to) {
     conditions.push(lte(events.reportedAt, filters.to));
+  }
+  if (filters?.search?.trim()) {
+    const term = `%${filters.search.trim()}%`;
+    conditions.push(
+      sql`(${events.title} ilike ${term} or ${events.district} ilike ${term} or ${events.locationName} ilike ${term})`,
+    );
   }
 
   const query = db
@@ -196,4 +219,119 @@ export async function getEventStats() {
     })
     .from(events);
   return stats ?? { total: 0, verified: 0, last30: 0 };
+}
+
+// ─── Incident updates ─────────────────────────────────────────────────────────
+
+export async function getEventUpdates(eventId: number) {
+  return db
+    .select({
+      id: incidentUpdates.id,
+      updateText: incidentUpdates.updateText,
+      updateType: incidentUpdates.updateType,
+      publishedAt: incidentUpdates.publishedAt,
+    })
+    .from(incidentUpdates)
+    .where(eq(incidentUpdates.eventId, eventId))
+    .orderBy(desc(incidentUpdates.publishedAt));
+}
+
+export type EventUpdate = Awaited<ReturnType<typeof getEventUpdates>>[number];
+
+// ─── Incident relations ───────────────────────────────────────────────────────
+
+export async function getEventRelations(eventId: number) {
+  const rows = await db
+    .select({
+      id: incidentRelations.id,
+      sourceEventId: incidentRelations.sourceEventId,
+      targetEventId: incidentRelations.targetEventId,
+      relationType: incidentRelations.relationType,
+      note: incidentRelations.note,
+      createdAt: incidentRelations.createdAt,
+    })
+    .from(incidentRelations)
+    .where(
+      sql`${incidentRelations.sourceEventId} = ${eventId} or ${incidentRelations.targetEventId} = ${eventId}`,
+    );
+
+  if (rows.length === 0) return [];
+
+  const relatedIds = rows.map((r) =>
+    r.sourceEventId === eventId ? r.targetEventId : r.sourceEventId,
+  );
+
+  // Only surface verified events publicly
+  const relatedEvents = await db
+    .select({
+      id: events.id,
+      title: events.title,
+      eventType: events.eventType,
+      state: events.state,
+      district: events.district,
+      reportedAt: events.reportedAt,
+    })
+    .from(events)
+    .where(and(inArray(events.id, relatedIds), eq(events.status, 'verified')));
+
+  const eventMap = new Map(relatedEvents.map((e) => [e.id, e]));
+
+  return rows
+    .map((r) => {
+      const relatedId = r.sourceEventId === eventId ? r.targetEventId : r.sourceEventId;
+      const related = eventMap.get(relatedId);
+      if (!related) return null;
+      return { ...r, related };
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null);
+}
+
+export type EventRelation = Awaited<ReturnType<typeof getEventRelations>>[number];
+
+// ─── Moderator stats ──────────────────────────────────────────────────────────
+
+export async function getModeratorStats() {
+  const [ls] = await db
+    .select({
+      total: sql<number>`count(*)::int`,
+      submitted: sql<number>`count(*) filter (where state = 'submitted')::int`,
+      underReview: sql<number>`count(*) filter (where state = 'under_review')::int`,
+      published: sql<number>`count(*) filter (where state = 'published')::int`,
+      rejected: sql<number>`count(*) filter (where state = 'rejected')::int`,
+      lastWeek: sql<number>`count(*) filter (where created_at > now() - interval '7 days')::int`,
+    })
+    .from(leads);
+
+  const [es] = await db
+    .select({
+      total: sql<number>`count(*)::int`,
+      verified: sql<number>`count(*) filter (where status = 'verified')::int`,
+      active: sql<number>`count(*) filter (where state = 'active' and status = 'verified')::int`,
+    })
+    .from(events);
+
+  // Avg hours from lead submission to first non-claim moderator action (last 90 days)
+  const [rt] = await db
+    .select({
+      avgHours: sql<
+        number | null
+      >`round(avg(extract(epoch from (review_decisions.created_at - leads.created_at)) / 3600)::numeric, 1)`,
+    })
+    .from(reviewDecisions)
+    .innerJoin(
+      leads,
+      and(
+        eq(reviewDecisions.targetId, leads.id),
+        eq(reviewDecisions.targetType, 'lead' as ReviewTargetType),
+      ),
+    )
+    .where(
+      sql`${reviewDecisions.action} != 'claim' and ${reviewDecisions.createdAt} > now() - interval '90 days'`,
+    );
+
+  return {
+    leads: ls ?? { total: 0, submitted: 0, underReview: 0, published: 0, rejected: 0, lastWeek: 0 },
+    events: es ?? { total: 0, verified: 0, active: 0 },
+    avgReviewHours: rt?.avgHours ?? null,
+  };
 }

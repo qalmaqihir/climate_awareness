@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { format } from 'date-fns';
-import { getEventById } from '@/lib/queries';
+import { getEventById, getEventUpdates, getEventRelations } from '@/lib/queries';
 import {
   EVENT_TYPE_COLORS,
   EVENT_TYPE_LABELS,
@@ -13,6 +13,19 @@ import {
   SEVERITY_LABELS,
   SEVERITY_COLORS,
 } from '@/lib/constants';
+
+const UPDATE_TYPE_LABELS: Record<string, string> = {
+  status: 'Status update',
+  correction: 'Correction',
+  resolution: 'Resolution',
+  severity_change: 'Severity change',
+};
+
+const RELATION_TYPE_LABELS: Record<string, string> = {
+  duplicate: 'Duplicate of',
+  related: 'Related event',
+  supersedes: 'Supersedes',
+};
 
 // Deduplicate the DB lookup between generateMetadata and the page component
 const getEventCached = cache(getEventById);
@@ -40,6 +53,11 @@ export default async function EventDetailPage({ params }: Props) {
   const event = await getEventCached(parsedId);
 
   if (!event) notFound();
+
+  const [updates, relations] = await Promise.all([
+    getEventUpdates(parsedId),
+    getEventRelations(parsedId),
+  ]);
 
   const typeColor = EVENT_TYPE_COLORS[event.eventType] ?? '#6b7280';
   const typeLabel = EVENT_TYPE_LABELS[event.eventType] ?? event.eventType;
@@ -163,6 +181,59 @@ export default async function EventDetailPage({ params }: Props) {
               {LOCATION_PRECISION_LABELS[event.locationPrecision] ?? event.locationPrecision}
             </p>
           )}
+        </div>
+      )}
+
+      {/* Incident updates timeline */}
+      {updates.length > 0 && (
+        <div className="mb-6">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+            Updates
+          </h2>
+          <div className="space-y-2">
+            {updates.map((u) => (
+              <div key={u.id} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                <div className="mb-1 flex items-center gap-2">
+                  <span className="text-xs font-medium text-teal-700">
+                    {UPDATE_TYPE_LABELS[u.updateType] ?? u.updateType}
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    {format(new Date(u.publishedAt), 'MMM d, yyyy')}
+                  </span>
+                </div>
+                <p className="text-sm text-slate-700">{u.updateText}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Related events */}
+      {relations.length > 0 && (
+        <div className="mb-6">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+            Related events
+          </h2>
+          <div className="space-y-2">
+            {relations.map((r) => (
+              <Link
+                key={r.id}
+                href={`/events/${r.related.id}`}
+                className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 hover:bg-slate-50"
+              >
+                <div>
+                  <p className="text-sm font-medium text-slate-800">{r.related.title}</p>
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    {r.related.district ?? 'GB'} ·{' '}
+                    {format(new Date(r.related.reportedAt), 'MMM d, yyyy')}
+                  </p>
+                </div>
+                <span className="ml-4 flex-shrink-0 rounded bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+                  {RELATION_TYPE_LABELS[r.relationType] ?? r.relationType}
+                </span>
+              </Link>
+            ))}
+          </div>
         </div>
       )}
 

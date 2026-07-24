@@ -10,6 +10,8 @@ import {
   INCIDENT_STATE_LABELS,
 } from '@/lib/constants';
 import type { EventType, EventSeverity } from '@/lib/schema';
+import { UpdatesPanel } from './UpdatesPanel';
+import { RelationsPanel } from './RelationsPanel';
 
 const EVENT_TYPES = Object.keys(EVENT_TYPE_LABELS) as EventType[];
 const SEVERITIES: EventSeverity[] = ['low', 'moderate', 'high', 'critical'];
@@ -390,6 +392,9 @@ export default function EditEventPage() {
           </a>
         </div>
       </form>
+
+      <UpdatesPanel eventId={parseInt(id)} />
+      <RelationsPanel eventId={parseInt(id)} />
     </div>
   );
 }
