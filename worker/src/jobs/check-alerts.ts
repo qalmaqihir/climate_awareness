@@ -1,12 +1,14 @@
 /**
- * Fetches GB-relevant alerts from three sources:
- *   1. ReliefWeb API — UN OCHA platform, aggregates Pakistan NDMA/PMD/PDMA reports (free JSON API)
+ * Fetches GB-relevant alerts from four sources:
+ *   1. ReliefWeb API v2 — UN OCHA platform, aggregates Pakistan NDMA/PMD/PDMA reports (free JSON API)
  *   2. Pamir Times RSS — leading English-language GB newspaper, real-time disaster coverage
  *   3. GDACS RSS — UN global disaster alert system, Pakistan-filtered
+ *   4. Chitral Times RSS — leading English/Urdu newspaper for Chitral (Upper + Lower Chitral)
  *
  * PMD removed: Cloudflare-blocked as of 2026.
  * NDMA /public/situation-reports: 404 — covered via ReliefWeb instead.
- * PDMA pdma.gob.pk: Balochistan province, not GB — removed.
+ * PDMA KPK (pdma.kpk.gov.pk): DNS unreachable outside Pakistan — replaced by Chitral Times.
+ * ReliefWeb v1 decommissioned 2026 → updated to v2 (requires registered appname).
  *
  * Deduplication: handled atomically by INSERT ... ON CONFLICT (source_url) DO NOTHING.
  * The alerts.source_url column has a UNIQUE constraint (migration 0006).
@@ -16,9 +18,10 @@ import * as cheerio from 'cheerio';
 import { sql } from 'drizzle-orm';
 import { db } from '../db.js';
 
-const RELIEFWEB_URL = 'https://api.reliefweb.int/v1/reports';
-const PAMIR_TIMES_RSS = 'https://www.pamirtimes.net/feed/';
+const RELIEFWEB_URL = 'https://api.reliefweb.int/v2/reports';
+const PAMIR_TIMES_RSS = 'https://pamirtimes.net/feed/';
 const GDACS_RSS = 'https://www.gdacs.org/xml/rss.xml';
+const CHITRAL_TIMES_RSS = 'https://chitraltimes.com/feed/';
 
 const UA = 'NP-Climate-Watch/1.0 (+https://climate-awareness-gbc.qalmaq.cloud)';
 
@@ -166,7 +169,13 @@ async function scrapeReliefWeb(sourceId: number | null) {
   });
 
   if (!res.ok) {
-    console.error(`[alerts] ReliefWeb HTTP ${res.status}`);
+    if (res.status === 403) {
+      console.warn(
+        '[alerts] ReliefWeb v2: access denied — appname not approved. Register at https://apidoc.reliefweb.int/parameters#appname',
+      );
+    } else {
+      console.error(`[alerts] ReliefWeb HTTP ${res.status}`);
+    }
     return;
   }
 
@@ -346,16 +355,118 @@ async function scrapeGDACS(sourceId: number | null) {
   );
 }
 
+// ─── Chitral Times RSS ────────────────────────────────────────────────────────
+// Leading English/Urdu newspaper for Chitral (Upper + Lower Chitral, KPK).
+// Replaces the unreachable PDMA KPK direct scraper.
+// Content is a mix of English and Urdu Unicode. All articles are Chitral-specific
+// so GB-relevance is assumed; the AI verifier suppresses non-disaster items.
+
+async function scrapeChitralTimes(sourceId: number | null) {
+  console.log('[alerts] Fetching Chitral Times RSS');
+
+  // Chitral Times sits behind Cloudflare — needs a browser-like UA
+  const res = await fetch(CHITRAL_TIMES_RSS, {
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      Accept: 'application/rss+xml, application/xml, text/xml, */*',
+    },
+    signal: AbortSignal.timeout(20000),
+  });
+
+  if (!res.ok) {
+    console.error(`[alerts] Chitral Times RSS HTTP ${res.status}`);
+    return;
+  }
+
+  const xml = await res.text();
+  const $ = cheerio.load(xml, { xml: true });
+  const items = $('item').toArray();
+
+  // Disaster keywords (English + key Urdu Unicode terms for flood/emergency/landslide)
+  const DISASTER_KW_EN = [
+    'flood',
+    'glof',
+    'glacial',
+    'landslide',
+    'mudslide',
+    'monsoon',
+    'emergency',
+    'disaster',
+    'rainfall',
+    'cloudburst',
+    'road blocked',
+    'bridge',
+    'casualties',
+    'ndma',
+    'pdma',
+    'pmd',
+    'warning',
+    'damage',
+    'selab',
+    'relief',
+    'rescue',
+    'evacuation',
+    'devastat',
+  ];
+  // Key Urdu Unicode fragments: سیلاب=flood, ہنگام=emergency, لینڈسلائیڈ=landslide, طوفان=storm
+  const DISASTER_KW_UR = ['سیلاب', 'ہنگام', 'لینڈسلائیڈ', 'طوفان', 'زلزلہ', 'نقصان', 'بارش'];
+
+  const candidates: AlertCandidate[] = [];
+
+  for (const el of items) {
+    const title = $('title', el).first().text().trim();
+    const link = $('link', el).text().trim() || $('guid', el).text().trim();
+    const pubDateRaw = $('pubDate', el).text().trim();
+    const description = $('description', el)
+      .text()
+      .replace(/<[^>]+>/g, ' ')
+      .trim();
+
+    if (!title || title.length < 3) continue;
+
+    const combined = (title + ' ' + description).toLowerCase();
+
+    // All Chitral Times articles are Chitral-specific — skip the GB-relevance check.
+    // Must match at least one disaster keyword (English or Urdu) to avoid ingest noise.
+    const isDisasterRelated =
+      DISASTER_KW_EN.some((kw) => combined.includes(kw)) ||
+      DISASTER_KW_UR.some((kw) => (title + description).includes(kw));
+
+    if (!isDisasterRelated) continue;
+
+    const issuedAt = pubDateRaw ? new Date(pubDateRaw) : new Date();
+    const safeDate = isNaN(issuedAt.getTime()) ? new Date() : issuedAt;
+
+    candidates.push({
+      title: title.slice(0, 500),
+      body: description.slice(0, 3000) || title,
+      alertType: inferAlertType(combined),
+      level: inferLevel(combined),
+      district: null,
+      sourceUrl: link || null,
+      issuedAt: safeDate,
+    });
+  }
+
+  const inserted = await batchInsertAlerts(candidates, sourceId);
+  console.log(
+    `[alerts] Chitral Times: ${inserted} new disaster alerts inserted (${items.length} items scanned)`,
+  );
+}
+
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
 export async function checkAlerts() {
   console.log('[alerts] Starting alert check');
 
-  const [reliefwebSourceId, pamirTimesSourceId, gdacsSourceId] = await Promise.all([
-    getSourceId('reliefweb'),
-    getSourceId('pamir-times'),
-    getSourceId('gdacs'),
-  ]);
+  const [reliefwebSourceId, pamirTimesSourceId, gdacsSourceId, chitralTimesSourceId] =
+    await Promise.all([
+      getSourceId('reliefweb'),
+      getSourceId('pamir-times'),
+      getSourceId('gdacs'),
+      getSourceId('chitral-times'),
+    ]);
 
   await Promise.all([
     scrapeReliefWeb(reliefwebSourceId).catch((e) =>
@@ -365,6 +476,9 @@ export async function checkAlerts() {
       console.error('[alerts] Pamir Times scraper error:', e),
     ),
     scrapeGDACS(gdacsSourceId).catch((e) => console.error('[alerts] GDACS scraper error:', e)),
+    scrapeChitralTimes(chitralTimesSourceId).catch((e) =>
+      console.error('[alerts] Chitral Times scraper error:', e),
+    ),
   ]);
 
   console.log('[alerts] Alert check complete');

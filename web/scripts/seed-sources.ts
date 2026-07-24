@@ -76,20 +76,20 @@ const SOURCES = [
   {
     name: 'PDMA Khyber Pakhtunkhwa',
     slug: 'pdma-kpk',
-    url: 'https://pdma.kp.gov.pk',
+    url: 'https://pdma.kpk.gov.pk',
     type: 'government' as const,
-    status: 'active' as const,
+    status: 'inactive' as const,
     description:
-      'Provincial Disaster Management Authority KPK — covers Chitral disaster alerts and flood situational reports.',
+      'Provincial Disaster Management Authority KPK — DNS unreachable outside Pakistan as of 2026. Chitral coverage now via Chitral Times RSS.',
   },
   {
     name: 'Chitral Times',
     slug: 'chitral-times',
-    url: 'https://www.chitral-times.pk',
+    url: 'https://chitraltimes.com',
     type: 'media' as const,
     status: 'active' as const,
     description:
-      'Leading English/Urdu newspaper for Chitral district. Covers GLOF events, road blockages, and flood damage in Upper and Lower Chitral.',
+      'Leading English/Urdu newspaper for Chitral district. RSS feed scraped hourly for GLOF, flood, and landslide reports in Upper and Lower Chitral.',
   },
 ] satisfies (typeof sources.$inferInsert)[];
 
