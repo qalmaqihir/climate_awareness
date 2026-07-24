@@ -277,7 +277,8 @@ export type ReviewDecisionAction =
   | 'relate'
   | 'attach_update'
   | 'refine_location'
-  | 'archive';
+  | 'archive'
+  | 'claim';
 export type ReviewTargetType = 'lead' | 'event' | 'evidence';
 export type IncidentUpdateType = 'status' | 'correction' | 'resolution' | 'severity_change';
 export type IncidentRelationType = 'duplicate' | 'related' | 'supersedes';
