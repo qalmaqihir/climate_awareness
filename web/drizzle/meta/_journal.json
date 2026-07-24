@@ -64,6 +64,13 @@
       "when": 1753574400000,
       "tag": "0008_ai_verification_subscribers",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784937600000,
+      "tag": "0009_leads_submitter_email_idx",
+      "breakpoints": true
     }
   ]
 }

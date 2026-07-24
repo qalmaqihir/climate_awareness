@@ -17,6 +17,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
   }
 
+  // Only contributors may submit leads — admins have a separate event creation flow
+  if (session.user.role !== 'contributor') {
+    return NextResponse.json({ error: 'Only contributors can submit reports' }, { status: 403 });
+  }
+
   const email = session.user.email;
 
   // DB-backed sliding-window rate limit — survives restarts, works on single VPS
@@ -50,39 +55,45 @@ export async function POST(req: Request) {
 
   const d = parsed.data;
 
-  const [newLead] = await db
-    .insert(leads)
-    .values({
-      submitterId: session.user.id ?? null,
-      submitterEmail: email,
-      intakeChannel: 'web',
-      title: d.title,
-      description: d.description,
-      eventType: d.eventType ?? null,
-      locationDescription: d.locationDescription ?? null,
-      district: d.district ?? null,
-      latitude: d.latitude ?? null,
-      longitude: d.longitude ?? null,
-      occurredAt: d.occurredAt ? new Date(d.occurredAt) : null,
-      contactPermission: d.contactPermission,
-      contactInfo: d.contactPermission ? (d.contactInfo ?? null) : null,
-      state: 'submitted',
-    })
-    .returning({ id: leads.id });
+  // Wrap lead + optional evidence in one transaction so partial failure is impossible
+  const newLead = await db.transaction(async (tx) => {
+    const [inserted] = await tx
+      .insert(leads)
+      .values({
+        submitterId: session.user.id ?? null,
+        submitterEmail: email,
+        intakeChannel: 'web',
+        title: d.title,
+        description: d.description,
+        eventType: d.eventType ?? null,
+        locationDescription: d.locationDescription ?? null,
+        district: d.district ?? null,
+        latitude: d.latitude ?? null,
+        longitude: d.longitude ?? null,
+        // Append T00:00:00Z so the date string is parsed as UTC midnight, not local time
+        occurredAt: d.occurredAt ? new Date(d.occurredAt + 'T00:00:00Z') : null,
+        contactPermission: d.contactPermission,
+        contactInfo: d.contactPermission ? (d.contactInfo ?? null) : null,
+        state: 'submitted',
+      })
+      .returning({ id: leads.id });
 
-  if (d.sourceUrl && newLead) {
-    await db.insert(leadEvidence).values({
-      leadId: newLead.id,
-      evidenceType: 'url',
-      sourceUrl: d.sourceUrl,
-      description: d.sourceDescription ?? null,
-      privacyState: 'moderator_only',
-      reviewerVisibility: 'internal',
-    });
-  }
+    if (d.sourceUrl) {
+      await tx.insert(leadEvidence).values({
+        leadId: inserted.id,
+        evidenceType: 'url',
+        sourceUrl: d.sourceUrl,
+        description: d.sourceDescription ?? null,
+        privacyState: 'moderator_only',
+        reviewerVisibility: 'internal',
+      });
+    }
+
+    return inserted;
+  });
 
   return NextResponse.json(
-    { id: newLead?.id, message: 'Report received — a moderator will review it shortly.' },
+    { id: newLead.id, message: 'Report received — a moderator will review it shortly.' },
     { status: 201 },
   );
 }

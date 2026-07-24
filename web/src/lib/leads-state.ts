@@ -4,8 +4,8 @@ import type { LeadState } from './schema';
 // (which atomically creates an event + records a review_decision).
 export const LEAD_TRANSITIONS: Record<LeadState, readonly LeadState[]> = {
   submitted: ['under_review', 'rejected'],
-  needs_clarification: ['under_review'],
-  under_review: ['rejected', 'needs_clarification'],
+  needs_clarification: ['under_review', 'rejected'],
+  under_review: ['rejected', 'needs_clarification', 'archived'],
   // Terminal states — no further PATCH transitions allowed
   published: [],
   rejected: [],
@@ -42,4 +42,5 @@ export const LEAD_QUEUE_TABS: { state: LeadState | 'all'; label: string }[] = [
   { state: 'needs_clarification', label: 'Needs info' },
   { state: 'published', label: 'Published' },
   { state: 'rejected', label: 'Rejected' },
+  { state: 'archived', label: 'Archived' },
 ];

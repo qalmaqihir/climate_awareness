@@ -16,14 +16,14 @@ export const authConfig: NextAuthConfig = {
     jwt({ token, user }) {
       if (user) {
         const u = user as { role?: UserRole; isAdmin?: boolean };
-        token.role = u.role ?? 'admin';
+        token.role = u.role ?? 'contributor';
         token.isAdmin = u.isAdmin ?? false;
       }
       return token;
     },
     session({ session, token }) {
       if (session.user) {
-        session.user.role = (token.role as UserRole | undefined) ?? 'admin';
+        session.user.role = (token.role as UserRole | undefined) ?? 'contributor';
         session.user.isAdmin = (token.isAdmin as boolean) ?? false;
       }
       return session;

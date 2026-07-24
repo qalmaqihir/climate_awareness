@@ -26,6 +26,7 @@ function buildCsp(nonce: string): string {
     "worker-src blob: 'self'",
     "object-src 'none'",
     "base-uri 'self'",
+    "form-action 'self'",
     // Prevents clickjacking — who can embed this page in an iframe (CSP supersedes X-Frame-Options)
     "frame-ancestors 'self'",
   ].join('; ');

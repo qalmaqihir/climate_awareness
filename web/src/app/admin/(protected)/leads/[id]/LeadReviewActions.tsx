@@ -162,7 +162,7 @@ function PublishForm({ lead }: { lead: LeadSnapshot }) {
       locationRationale: get('locationRationale') || undefined,
       latitude: latRaw ? parseFloat(latRaw) : undefined,
       longitude: lngRaw ? parseFloat(lngRaw) : undefined,
-      reportedAt: (get('reportedAt') + ':00Z').replace(/Z$/, 'Z'),
+      reportedAt: get('reportedAt') + ':00Z',
       rationale: get('rationale'),
     };
 
@@ -423,8 +423,18 @@ export function LeadReviewActions({ lead }: { lead: LeadSnapshot }) {
         />
       )}
 
-      {/* Reject (from submitted or under_review) */}
-      {(state === 'submitted' || state === 'under_review') && (
+      {/* Archive (spam / housekeeping — from under_review only) */}
+      {state === 'under_review' && (
+        <TransitionButton
+          leadId={lead.id}
+          toState="archived"
+          label="Archive (no audit)"
+          variant="secondary"
+        />
+      )}
+
+      {/* Reject (from submitted, needs_clarification, or under_review) */}
+      {(state === 'submitted' || state === 'needs_clarification' || state === 'under_review') && (
         <TransitionButton
           leadId={lead.id}
           toState="rejected"

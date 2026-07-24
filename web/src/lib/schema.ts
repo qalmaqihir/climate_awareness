@@ -314,6 +314,8 @@ export const leads = pgTable(
     index('leads_state_idx').on(t.state),
     index('leads_submitter_idx').on(t.submitterId),
     index('leads_event_idx').on(t.publishedEventId),
+    // Covers the sliding-window rate-limit query: WHERE submitter_email=? AND created_at>?
+    index('leads_submitter_email_idx').on(t.submitterEmail, t.createdAt),
   ],
 );
 

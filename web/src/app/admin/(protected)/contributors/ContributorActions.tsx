@@ -100,25 +100,37 @@ export function AddContributorForm() {
 export function RevokeButton({ id, email }: { id: string; email: string }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleRevoke() {
     if (!confirm(`Revoke access for ${email}? Their submitted leads will be preserved.`)) return;
+    setError(null);
     setLoading(true);
     try {
-      await fetch(`/api/admin/contributors/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/admin/contributors/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(json.error ?? 'Revoke failed — please retry');
+        return;
+      }
       router.refresh();
+    } catch {
+      setError('Network error — please retry');
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <button
-      onClick={handleRevoke}
-      disabled={loading}
-      className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
-    >
-      {loading ? 'Revoking…' : 'Revoke'}
-    </button>
+    <div className="text-right">
+      {error && <p className="mb-1 text-xs text-red-600">{error}</p>}
+      <button
+        onClick={handleRevoke}
+        disabled={loading}
+        className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
+      >
+        {loading ? 'Revoking…' : 'Revoke'}
+      </button>
+    </div>
   );
 }

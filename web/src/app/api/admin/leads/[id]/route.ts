@@ -11,9 +11,18 @@ import { isValidLeadTransition } from '@/lib/leads-state';
 type Props = { params: Promise<{ id: string }> };
 
 const patchSchema = z.object({
-  state: z.enum(['under_review', 'rejected', 'needs_clarification'] as const),
+  state: z.enum(['under_review', 'rejected', 'needs_clarification', 'archived'] as const),
   rationale: z.string().max(2000).optional(),
 });
+
+class RouteError extends Error {
+  constructor(
+    public readonly code: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
 export async function GET(_req: Request, { params }: Props) {
   const session = await auth();
@@ -54,32 +63,35 @@ export async function PATCH(req: Request, { params }: Props) {
   }
 
   const toState = parsed.data.state as LeadState;
+  const email = session.user.email ?? '';
 
-  // Load current state
-  const [current] = await db
-    .select({ state: leads.state })
-    .from(leads)
-    .where(eq(leads.id, leadId))
-    .limit(1);
-  if (!current) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-
-  if (!isValidLeadTransition(current.state as LeadState, toState)) {
-    return NextResponse.json(
-      { error: `Cannot transition from '${current.state}' to '${toState}'` },
-      { status: 422 },
-    );
+  // Resolve reviewer before transaction — fail-closed if session email has no DB record
+  const reviewer = email ? await getReviewerByEmail(email) : null;
+  if (!reviewer) {
+    return NextResponse.json({ error: 'Could not resolve reviewer account' }, { status: 500 });
   }
 
-  const email = session.user.email ?? '';
-  const reviewer = email ? await getReviewerByEmail(email) : null;
+  try {
+    await db.transaction(async (tx) => {
+      // SELECT FOR UPDATE prevents two concurrent moderators from transitioning the same lead
+      const [current] = await tx
+        .select({ state: leads.state })
+        .from(leads)
+        .where(eq(leads.id, leadId))
+        .limit(1)
+        .for('update');
 
-  await db.transaction(async (tx) => {
-    await tx
-      .update(leads)
-      .set({ state: toState, updatedAt: new Date() })
-      .where(eq(leads.id, leadId));
+      if (!current) throw new RouteError(404, 'Not found');
 
-    if (reviewer) {
+      if (!isValidLeadTransition(current.state as LeadState, toState)) {
+        throw new RouteError(422, `Cannot transition from '${current.state}' to '${toState}'`);
+      }
+
+      await tx
+        .update(leads)
+        .set({ state: toState, updatedAt: new Date() })
+        .where(eq(leads.id, leadId));
+
       await tx.insert(reviewDecisions).values({
         reviewerId: reviewer.id,
         reviewerEmail: reviewer.email ?? email,
@@ -90,8 +102,13 @@ export async function PATCH(req: Request, { params }: Props) {
         beforeState: { state: current.state },
         afterState: { state: toState },
       });
+    });
+  } catch (e) {
+    if (e instanceof RouteError) {
+      return NextResponse.json({ error: e.message }, { status: e.code });
     }
-  });
+    throw e;
+  }
 
   return NextResponse.json({ id: leadId, state: toState });
 }

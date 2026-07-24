@@ -7,12 +7,23 @@ import { EVENT_TYPE_LABELS } from '@/lib/constants';
 
 export const dynamic = 'force-dynamic';
 
+const VALID_LEAD_STATES: LeadState[] = [
+  'submitted',
+  'needs_clarification',
+  'under_review',
+  'published',
+  'rejected',
+  'archived',
+];
+
 type Props = { searchParams: Promise<{ state?: string }> };
 
 export default async function LeadsQueuePage({ searchParams }: Props) {
   const { state: rawState } = await searchParams;
-  const activeTab = (rawState as LeadState | 'all') ?? 'all';
-  const filterState = activeTab === 'all' ? undefined : (activeTab as LeadState);
+  // Validate rawState against known states to prevent unchecked values reaching getLeads
+  const isValidState = rawState !== undefined && VALID_LEAD_STATES.includes(rawState as LeadState);
+  const activeTab: LeadState | 'all' = isValidState ? (rawState as LeadState) : 'all';
+  const filterState = activeTab === 'all' ? undefined : activeTab;
 
   const rows = await getLeads({ state: filterState }, 200);
 
