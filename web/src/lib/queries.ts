@@ -132,6 +132,61 @@ export async function getActiveSources() {
   return db.select().from(sources).where(eq(sources.status, 'active'));
 }
 
+// ─── Admin alert queries ───────────────────────────────────────────────────────
+
+export type AdminAlertRow = {
+  id: number;
+  title: string;
+  body: string;
+  alertType: string;
+  level: string;
+  district: string | null;
+  sourceUrl: string | null;
+  isActive: boolean;
+  issuedAt: Date;
+  expiresAt: Date | null;
+  createdAt: Date;
+  aiConfidence: number | null;
+  aiSummary: string | null;
+  aiVerified: boolean;
+};
+
+export async function getAdminAlerts(
+  opts: { limit?: number; onlyPendingReview?: boolean } = {},
+): Promise<AdminAlertRow[]> {
+  const { limit = 50, onlyPendingReview = false } = opts;
+
+  // Pending review = AI processed, confidence in uncertain zone (50–79), still active
+  const pendingFilter = and(
+    eq(alerts.aiVerified, true),
+    gte(alerts.aiConfidence, 50),
+    lte(alerts.aiConfidence, 79),
+    eq(alerts.isActive, true),
+  );
+
+  return db
+    .select({
+      id: alerts.id,
+      title: alerts.title,
+      body: alerts.body,
+      alertType: alerts.alertType,
+      level: alerts.level,
+      district: alerts.district,
+      sourceUrl: alerts.sourceUrl,
+      isActive: alerts.isActive,
+      issuedAt: alerts.issuedAt,
+      expiresAt: alerts.expiresAt,
+      createdAt: alerts.createdAt,
+      aiConfidence: alerts.aiConfidence,
+      aiSummary: alerts.aiSummary,
+      aiVerified: alerts.aiVerified,
+    })
+    .from(alerts)
+    .where(onlyPendingReview ? pendingFilter : undefined)
+    .orderBy(desc(alerts.issuedAt))
+    .limit(limit) as Promise<AdminAlertRow[]>;
+}
+
 export async function getEventStats() {
   const [stats] = await db
     .select({
